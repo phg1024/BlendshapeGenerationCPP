@@ -5,6 +5,8 @@
 #include "mkl_types.h"
 #include "mkl_spblas.h"
 
+#include "cholmod.h"
+
 template <typename T>
 struct SparseMatrix {
   SparseMatrix(){}
@@ -32,15 +34,14 @@ struct SparseMatrix {
 
   void createCSRindices() {
     Ai_CSR.resize(Ai.back()+2, 0);
-    for (int i = 0; i < Ai_CSR.size(); ++i) ++Ai_CSR[Ai[i]+1];
+    for (int i = 0; i < Ai.size(); ++i) ++Ai_CSR[Ai[i]+1];
     // compute prefix sum
     for (int i = 1; i < Ai_CSR.size(); ++i) {
       Ai_CSR[i] += Ai_CSR[i - 1];
     }
   }
 
-  vector<T> solve(vector<T> &rhs);  
-  vector<T> solve_cg(const vector<T> &rhs);
+  vector<T> solve(vector<T> &rhs, cholmod_common *c);
   vector<T> operator*(const vector<T> &b);
   SparseMatrix<T> operator*(const SparseMatrix<T> &m);
 
@@ -49,6 +50,8 @@ struct SparseMatrix {
   // computes A' * A
   SparseMatrix<T> selfProduct() const;
 
+  cholmod_sparse* convertToCSC(cholmod_common *common) const;
+
   template <typename MT>
   friend ostream& operator<<(ostream &os, const SparseMatrix<MT> &m);
 
@@ -56,13 +59,9 @@ struct SparseMatrix {
   vector<int> Ai, Aj;
   vector<int> Ai_CSR;
   vector<T> Av;
-};
 
-template <typename T>
-vector<T> SparseMatrix<T>::solve_cg(const vector<T> &rhs)
-{
-  // can use this one if the original problem is an optimization problem
-}
+  vector<int> Ai_CSC, Aj_CSC, Av_CSC;
+};
 
 template <typename T>
 SparseMatrix<T> SparseMatrix<T>::selfProduct() const
@@ -78,6 +77,9 @@ SparseMatrix<T> SparseMatrix<T>::selfProduct() const
   int n = Ai.size();
 
   res.reserve(n * 2);
+
+  for(int x : At.Ai_CSR) cout << x << " ";
+  cout << endl;
 
   for (int i = 0; i < cols; ++i) {
     int istart = At.Ai_CSR[i];
@@ -124,6 +126,29 @@ SparseMatrix<T> SparseMatrix<T>::selfProduct() const
   }
 
   return res;
+}
+
+template <typename T>
+cholmod_sparse* SparseMatrix<T>::convertToCSC(cholmod_common *common) const
+{
+    cout << "converting to CSC format ..." << endl;
+    int n = Av.size();
+
+    // create a cholmod_triplet structure
+    cholmod_triplet *t = cholmod_allocate_triplet(rows, cols, n, 0, CHOLMOD_REAL, common);
+
+    // need to store this in column major
+    memcpy(t->i, &(Ai[0]), sizeof(int)*n);
+    memcpy(t->j, &(Aj[0]), sizeof(int)*n);
+    double *Tx = (double*)(t->x);
+    for(int i=0;i<n;++i) Tx[i] = Av[i];
+    t->nnz = n;
+    t->stype = 0;
+
+    cholmod_sparse* s = cholmod_triplet_to_sparse(t, n, common);
+    cholmod_free_triplet(&t, common);
+
+    return s;
 }
 
 template <typename T>
@@ -214,162 +239,52 @@ vector<T> SparseMatrix<T>::operator*(const vector<T> &rhs)
 }
 
 template <typename T>
-vector<T> SparseMatrix<T>::solve(vector<T> &b)
+vector<T> SparseMatrix<T>::solve(vector<T> &b0, cholmod_common *c)
 {
-#if 1
-  cout << "solving linear equation ..." << endl;
-  int n = b.size();
-  vector<T> y(n);
-  int ldb = 1;  
-  float alpha=1.0, beta = 0.0;
-  char		matdescra[7] = "tlnc ";
-  char transa = 't';
-  vector<T> temp(n);
-  mkl_scoosm(&transa, &rows, &cols, &alpha, matdescra, &(Av[0]), &(Ai[0]), &(Aj[0]), &n, &(b[0]), &ldb, &(temp[0]), &n);
-  return y;
-#else
-  this->createCSRindices();
+    cout << "solving A\\b" << endl;
+    int n = b0.size();
+    cholmod_dense *x, *b;
 
-  MKL_INT mtype = 11;       /* Real unsymmetric matrix */
-  /* RHS and solution vectors. */
-  vector<float> x(b.size()), bs(b.size());
-  double res, res0;
-  MKL_INT nrhs = 1;     /* Number of right hand sides. */
-  /* Internal solver memory pointer pt, */
-  /* 32-bit: int pt[64]; 64-bit: long int pt[64] */
-  /* or void *pt[64] should be OK on both architectures */
-  void *pt[64];
-  /* Pardiso control parameters. */
-  MKL_INT iparm[64];
-  MKL_INT maxfct, mnum, phase, error, msglvl;
-  /* Auxiliary variables. */
-  MKL_INT i, j;
-  MKL_INT n = b.size();
-  double ddum;          /* Double dummy */
-  MKL_INT idum;         /* Integer dummy. */
-  char *uplo;
-  /* -------------------------------------------------------------------- */
-  /* .. Setup Pardiso control parameters. */
-  /* -------------------------------------------------------------------- */
-  for (i = 0; i < 64; i++)
-  {
-    iparm[i] = 0;
-  }
-  iparm[0] = 1;         /* No solver default */
-  iparm[1] = 2;         /* Fill-in reordering from METIS */
-  iparm[3] = 0;         /* No iterative-direct algorithm */
-  iparm[4] = 0;         /* No user fill-in reducing permutation */
-  iparm[5] = 0;         /* Write solution into x */
-  iparm[6] = 0;         /* Not in use */
-  iparm[7] = 2;         /* Max numbers of iterative refinement steps */
-  iparm[8] = 0;         /* Not in use */
-  iparm[9] = 13;        /* Perturb the pivot elements with 1E-13 */
-  iparm[10] = 1;        /* Use nonsymmetric permutation and scaling MPS */
-  iparm[11] = 0;        /* Conjugate transposed/transpose solve */
-  iparm[12] = 1;        /* Maximum weighted matching algorithm is switched-on (default for non-symmetric) */
-  iparm[13] = 0;        /* Output: Number of perturbed pivots */
-  iparm[14] = 0;        /* Not in use */
-  iparm[15] = 0;        /* Not in use */
-  iparm[16] = 0;        /* Not in use */
-  iparm[17] = -1;       /* Output: Number of nonzeros in the factor LU */
-  iparm[18] = -1;       /* Output: Mflops for LU factorization */
-  iparm[19] = 0;        /* Output: Numbers of CG Iterations */
-  maxfct = 1;           /* Maximum number of numerical factorizations. */
-  mnum = 1;         /* Which factorization to use. */
-  msglvl = 1;           /* Print statistical information in file */
-  error = 0;            /* Initialize error flag */
-  /* -------------------------------------------------------------------- */
-  /* .. Initialize the internal solver memory pointer. This is only */
-  /* necessary for the FIRST call of the PARDISO solver. */
-  /* -------------------------------------------------------------------- */
-  for (i = 0; i < 64; i++)
-  {
-    pt[i] = 0;
-  }
-  /* -------------------------------------------------------------------- */
-  /* .. Reordering and Symbolic Factorization. This step also allocates */
-  /* all memory that is necessary for the factorization. */
-  /* -------------------------------------------------------------------- */
-  phase = 11;
-  PARDISO(pt, &maxfct, &mnum, &mtype, &phase,
-    &n, &(Av[0]), &(Ai_CSR[0]), &(Aj[0]), &idum, &nrhs, iparm, &msglvl, &ddum, &ddum, &error);
-  if (error != 0)
-  {
-    printf("\nERROR during symbolic factorization: %d", error);
-    exit(1);
-  }
-  printf("\nReordering completed ... ");
-  printf("\nNumber of nonzeros in factors = %d", iparm[17]);
-  printf("\nNumber of factorization MFLOPS = %d", iparm[18]);
-  /* -------------------------------------------------------------------- */
-  /* .. Numerical factorization. */
-  /* -------------------------------------------------------------------- */
-  phase = 22;
-  PARDISO(pt, &maxfct, &mnum, &mtype, &phase,
-    &n, &(Av[0]), &(Ai_CSR[0]), &(Aj[0]), &idum, &nrhs, iparm, &msglvl, &ddum, &ddum, &error);
-  if (error != 0)
-  {
-    printf("\nERROR during numerical factorization: %d", error);
-    exit(2);
-  }
-  printf("\nFactorization completed ... ");
-  /* -------------------------------------------------------------------- */
-  /* .. Back substitution and iterative refinement. */
-  /* -------------------------------------------------------------------- */
-  phase = 33;
-  //  Loop over 3 solving steps: Ax=b, AHx=b and ATx=b
-  for (i = 0; i < 3; i++)
-  {
-    iparm[11] = i;        /* Conjugate transposed/transpose solve */
-    if (i == 0)
-      uplo = "non-transposed";
-    else if (i == 1)
-      uplo = "conjugate transposed";
-    else
-      uplo = "transposed";
+    for(int i=0;i<b0.size();++i) cout << b0[i] << ' ';
+    cout << endl;
 
-    printf("\n\nSolving %s system...\n", uplo);
-    PARDISO(pt, &maxfct, &mnum, &mtype, &phase,
-      &n, &(Av[0]), &(Ai_CSR[0]), &(Aj[0]), &idum, &nrhs, iparm, &msglvl, &(b[0]), &(x[0]), &error);
-    if (error != 0)
-    {
-      printf("\nERROR during solution: %d", error);
-      exit(3);
+    cout << "A = \n" << (*this) << endl;
+
+    b = cholmod_allocate_dense(n, 1, n, CHOLMOD_REAL, c);
+    memcpy(b->x, &(b0[0]), sizeof(T)*n);
+    double *pb = (double*)(b->x);
+    for(int i=0;i<n;++i) cout << pb[i] << ' ';
+    cout << endl;
+
+    cholmod_sparse *A = this->convertToCSC(c);
+    A->stype = 1;           // it is actually symmetric
+    cholmod_print_sparse(A, "A", c);
+    FILE *file = fopen("A.mat", "w");
+    cholmod_write_sparse(file, A, 0, 0, c);
+
+
+    cholmod_factor *L = cholmod_analyze(A, c);
+    cholmod_print_factor(L, "L", c);
+
+    cholmod_factorize(A, L, c);
+    cholmod_print_sparse(A, "A factored", c);
+
+    x = cholmod_solve(CHOLMOD_A, L, b, c);
+    cholmod_print_dense(x, "x", c);
+
+    cout << "solved." << endl;
+
+    vector<T> res(n);
+    double *X = (double*)x->x;
+    for(int i=0;i<n;++i) {
+        cout << X[i] << ' ';
+        res[i] = X[i];
     }
+    cout << endl;
+    cholmod_free_factor (&L, c) ;		    /* free matrices */
+    cholmod_free_sparse (&A, c) ;
+    cholmod_free_dense (&x, c) ;
+    cholmod_free_dense (&b, c) ;
 
-    printf("\nThe solution of the system is: ");
-    for (j = 0; j < n; j++)
-    {
-      printf("\n x [%d] = % f", j, x[j]);
-    }
-    printf("\n");
-    // Compute residual
-    mkl_scsrgemv(uplo, &n, &(Av[0]), &(Ai_CSR[0]), &(Aj[0]), &(x[0]), &(bs[0]));
-    res = 0.0;
-    res0 = 0.0;
-    for (j = 1; j <= n; j++)
-    {
-      res += (bs[j - 1] - b[j - 1]) * (bs[j - 1] - b[j - 1]);
-      res0 += b[j - 1] * b[j - 1];
-    }
-    res = sqrt(res) / sqrt(res0);
-    printf("\nRelative residual = %e", res);
-    // Check residual
-    if (res > 1e-10)
-    {
-      printf("Error: residual is too high!\n");
-      exit(10 + i);
-    }
-  }
-
-  /* -------------------------------------------------------------------- */
-  /* .. Termination and release of memory. */
-  /* -------------------------------------------------------------------- */
-  phase = -1;           /* Release internal memory. */
-  PARDISO(pt, &maxfct, &mnum, &mtype, &phase,
-    &n, &ddum, &(Ai_CSR[0]), &(Aj[0]), &idum, &nrhs,
-    iparm, &msglvl, &ddum, &ddum, &error);
-
-  return x;
-#endif
+    return res;
 }

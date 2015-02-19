@@ -99,7 +99,7 @@ struct BasicMatrix {
     if (cols != rhs.rows) throw "Matrix dimensions not compatible.";
     else {
       BasicMatrix res(rows, rhs.cols);
-      cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, rows, rhs.cols, cols, 1.0, data.get(), cols,
+      cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, rows, rhs.cols, cols, 1.0, data.get(), cols,
         rhs.data.get(), rhs.cols, 0, res.data.get(), rhs.cols);
       return res;
     }
@@ -120,9 +120,9 @@ struct BasicMatrix {
     BasicMatrix res = this->clone();
     vector<int> ipiv(rows);
     // LU factorization
-    LAPACKE_sgetrf(LAPACK_ROW_MAJOR, rows, cols, res.data.get(), cols, &ipiv[0]);
+    LAPACKE_dgetrf(LAPACK_ROW_MAJOR, rows, cols, res.data.get(), cols, &ipiv[0]);
     // inversion
-    LAPACKE_sgetri(LAPACK_ROW_MAJOR, rows, res.data.get(), cols, &ipiv[0]);
+    LAPACKE_dgetri(LAPACK_ROW_MAJOR, rows, res.data.get(), cols, &ipiv[0]);
     return res;
   }
   template <typename MT>

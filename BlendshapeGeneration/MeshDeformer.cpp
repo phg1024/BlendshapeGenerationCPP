@@ -32,10 +32,10 @@ BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const PointCloud &lm_
   }
 
   // compute delta_i
-  BasicMatrix<float> delta(nverts, 3);
+  BasicMatrix<double> delta(nverts, 3);
   for (int i = 0; i < nverts; ++i) {
     auto& Ni = N[i];
-    float sx = 0, sy = 0, sz = 0;
+    double sx = 0, sy = 0, sz = 0;
     for (auto j : Ni) {
       int offset_j = j * 3;
       sx += V(offset_j); ++offset_j;
@@ -44,14 +44,14 @@ BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const PointCloud &lm_
     }
 
     int offset_i = i * 3;
-    float invNi = 1.0 / Ni.size();
+    double invNi = 1.0 / Ni.size();
     delta(offset_i  ) = V(offset_i  ) - sx * invNi;
     delta(offset_i+1) = V(offset_i+1) - sy * invNi;
     delta(offset_i+2) = V(offset_i+2) - sz * invNi;
   }
 
-  auto makeVMatrix = [&](float x, float y, float z) {
-    BasicMatrix<float> V = BasicMatrix<float>::zeros(3, 7);
+  auto makeVMatrix = [&](double x, double y, double z) {
+    BasicMatrix<double> V = BasicMatrix<double>::zeros(3, 7);
     V(0) = x; V(2) = z; V(3) = -y; V(4) = 1.0;
     V(7) = y; V(9) = -z; V(10) = x; V(12) = 1.0;
     V(14) = z; V(15) = y; V(16) = -x; V(20) = 1.0;
@@ -60,10 +60,10 @@ BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const PointCloud &lm_
   };
 
   // compute A matrix
-  vector<BasicMatrix<float>> A(nverts);
+  vector<BasicMatrix<double>> A(nverts);
   for (int i = 0; i < nverts; ++i) {
     auto& Ni = N[i];
-    A[i] = BasicMatrix<float>::zeros(3*(Ni.size()+1), 7);
+    A[i] = BasicMatrix<double>::zeros(3*(Ni.size()+1), 7);
     
     int offset_i = i * 3;
     // set the vertex's terms
@@ -89,8 +89,8 @@ BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const PointCloud &lm_
     }
   }
 
-  auto makeDMatrix = [&](float x, float y, float z) {
-    BasicMatrix<float> V = BasicMatrix<float>::zeros(3, 7);
+  auto makeDMatrix = [&](double x, double y, double z) {
+    BasicMatrix<double> V = BasicMatrix<double>::zeros(3, 7);
     V(0) = x; V(2) = z; V(3) = -y;
     V(7) = y; V(9) = -z; V(10) = x;
     V(14) = z; V(15) = y; V(16) = -x;
@@ -99,7 +99,7 @@ BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const PointCloud &lm_
   };
 
   // compute T matrix
-  vector<BasicMatrix<float>> Tm(nverts);
+  vector<BasicMatrix<double>> Tm(nverts);
   for (int i = 0; i < nverts; ++i) {
     int offset_i = i * 3;
     auto Di = makeDMatrix(delta(offset_i), delta(offset_i+1), delta(offset_i+2));
@@ -139,10 +139,13 @@ BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const PointCloud &lm_
   const int itmax = 1;
   int iters = 0;
 
-  float w_icp = 0.0, w_icp_step = landmarks.size() / (float)npoints;
-  float w_data = 1.0, w_data_step = 0.1;
-  float w_dist = 100.0, w_dist_step = 10.0;
-  float w_prior = 0.1, w_prior_step = 0.0095;
+  double w_icp = 0.0, w_icp_step = landmarks.size() / (double)npoints;
+  double w_data = 1.0, w_data_step = 0.1;
+  double w_dist = 100.0, w_dist_step = 10.0;
+  double w_prior = 0.1, w_prior_step = 0.0095;
+
+  cholmod_common common;
+  cholmod_start(&common);
 
   while (iters++ < itmax) {
     cout << "iteration " << iters << endl;
@@ -151,15 +154,15 @@ BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const PointCloud &lm_
     vector<ICPCorrespondence> icp_corr = findClosestPoints_bruteforce(P, D);
 
     // compute fitting error
-    float Efit = 0;
+    double Efit = 0;
     for (int i = 0, idx=0; i < npoints; ++i) {
       // input point
-      float px = P.points(idx++), py = P.points(idx++), pz = P.points(idx++);
-      float dx = icp_corr[i].hit[0] - px;
-      float dy = icp_corr[i].hit[1] - py;
-      float dz = icp_corr[i].hit[2] - pz;
+      double px = P.points(idx++), py = P.points(idx++), pz = P.points(idx++);
+      double dx = icp_corr[i].hit[0] - px;
+      double dy = icp_corr[i].hit[1] - py;
+      double dz = icp_corr[i].hit[2] - pz;
 
-      float Ei = sqrt(dx*dx + dy*dy + dz*dz);
+      double Ei = sqrt(dx*dx + dy*dy + dz*dz);
       Efit += Ei;
     }
     Efit /= npoints;
@@ -186,22 +189,22 @@ BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const PointCloud &lm_
     nterms += ndistortion;
     nrows += S.verts.rows * 3;
 
-    SparseMatrix<float> M(nrows, nverts*3);
+    SparseMatrix<double> M(nrows, nverts*3);
     M.resize(nterms);
-    vector<float> b(nterms, 0);
+    vector<double> b(nterms, 0);
     int midx = 0;
     int roffset = 0;
 
     // ICP term
     for (int i = 0; i < npoints; ++i) {
-      float wi = icp_corr[i].weight * w_icp;
+      double wi = icp_corr[i].weight * w_icp;
       int toffset = icp_corr[i].tidx*3;
       int v0 = S.faces(toffset), v1 = S.faces(toffset + 1), v2 = S.faces(toffset + 2);
 
       int v0offset = v0 * 3, v1offset = v1 * 3, v2offset = v2 * 3;
-      float wi0 = icp_corr[i].bcoords[0] * wi;
-      float wi1 = icp_corr[i].bcoords[1] * wi;
-      float wi2 = icp_corr[i].bcoords[2] * wi;
+      double wi0 = icp_corr[i].bcoords[0] * wi;
+      double wi1 = icp_corr[i].bcoords[1] * wi;
+      double wi2 = icp_corr[i].bcoords[2] * wi;
       
       int ioffset = i * 3;
       M.Ai[midx] = ioffset; M.Aj[midx] = v0offset + 0; M.Av[midx] = wi0; ++midx;
@@ -227,7 +230,7 @@ BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const PointCloud &lm_
     // landmarks term term
     for (int i = 0, ioffset = 0; i < ndata; ++i) {
       int dstart = landmarks[i] * 3;
-      float wi = w_data;
+      double wi = w_data;
       M.Ai[midx] = roffset + i; M.Aj[midx] = dstart + 1; M.Av[midx] = wi; ++midx;
       M.Ai[midx] = roffset + i; M.Aj[midx] = dstart + 2; M.Av[midx] = wi; ++midx;
       M.Ai[midx] = roffset + i; M.Aj[midx] = dstart + 3; M.Av[midx] = wi; ++midx;
@@ -241,7 +244,7 @@ BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const PointCloud &lm_
     // prior term, i.e. similarity to source mesh
     for (int i = 0, ioffset = 0; i < nprior; ++i) {
       int dstart = i * 3;
-      float wi = w_prior;
+      double wi = w_prior;
       M.Ai[midx] = roffset + i; M.Aj[midx] = dstart + 1; M.Av[midx] = wi; ++midx;
       M.Ai[midx] = roffset + i; M.Aj[midx] = dstart + 2; M.Av[midx] = wi; ++midx;
       M.Ai[midx] = roffset + i; M.Aj[midx] = dstart + 3; M.Av[midx] = wi; ++midx;
@@ -256,7 +259,7 @@ BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const PointCloud &lm_
     for (int i = 0, ioffset = 0; i < nverts; ++i) {
       auto& Ti = Tm[i];
       auto& Ni = N[i];
-      float wi = w_dist;
+      double wi = w_dist;
 
       for (int k = 0; k < 3; ++k) {
         // deformation part
@@ -265,7 +268,7 @@ BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const PointCloud &lm_
         M.Ai[midx] = roffset + ioffset + k; M.Aj[midx] = ioffset + 2; M.Av[midx] = -Ti(k, 2)*wi; midx = midx + 1;
 
         int j = 0;
-        float wij = -1.0 / Ni.size();
+        double wij = -1.0 / Ni.size();
         for (auto Nij : Ni) {
           int jstart = Nij * 3;
           int joffset = j * 3;
@@ -281,14 +284,14 @@ BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const PointCloud &lm_
     // solve sparse linear system
     
     // compute M' * M
-    SparseMatrix<float> MtM = M.selfProduct();
+    SparseMatrix<double> MtM = M.selfProduct();
         
     // compute M' * b
-    vector<float> Mtb = M * b;
+    vector<double> Mtb = M * b;
 
     // solve (M'*M)\(M'*b)
     // solution vector
-    vector<float> x = MtM.solve(Mtb);
+    vector<double> x = MtM.solve(Mtb, &common);
 
     // update weighting factors
     // increase w_icp
@@ -300,6 +303,8 @@ BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const PointCloud &lm_
     // decrease w_prior
       w_prior = (itmax - iters) * w_prior_step;
   }
+
+  cholmod_finish(&common);
   
   
   return D;
@@ -319,11 +324,11 @@ vector<ICPCorrespondence> MeshDeformer::findClosestPoints_bruteforce(const Point
 #pragma omp parallel for
   for (int pidx = 0; pidx < npoints; ++pidx) {
     int poffset = pidx * 3;
-    float px = P.points(poffset), py = P.points(poffset+1), pz = P.points(poffset+2);
+    double px = P.points(poffset), py = P.points(poffset+1), pz = P.points(poffset+2);
 
 #undef max
     ICPCorrespondence bestCorr;
-    bestCorr.d = numeric_limits<float>::max();
+    bestCorr.d = numeric_limits<double>::max();
 
     for (int i = 0, foffset=0; i < nfaces; ++i, foffset+=3) {
       int v0 = mesh.faces(foffset), v1 = mesh.faces(foffset+1), v2 = mesh.faces(foffset+2);
@@ -339,9 +344,9 @@ vector<ICPCorrespondence> MeshDeformer::findClosestPoints_bruteforce(const Point
     int toffset = bestCorr.tidx * 3;
     int v0idx = mesh.faces(toffset), v1idx = mesh.faces(toffset + 1), v2idx = mesh.faces(toffset + 2);
 
-    const float* v0 = mesh.verts.rowptr(v0idx);
-    const float* v1 = mesh.verts.rowptr(v1idx);
-    const float* v2 = mesh.verts.rowptr(v2idx);
+    const double* v0 = mesh.verts.rowptr(v0idx);
+    const double* v1 = mesh.verts.rowptr(v1idx);
+    const double* v2 = mesh.verts.rowptr(v2idx);
 
     PhGUtils::Point3f bcoords;
     PhGUtils::computeBarycentricCoordinates(PhGUtils::Point3f(px, py, pz),
@@ -357,15 +362,15 @@ vector<ICPCorrespondence> MeshDeformer::findClosestPoints_bruteforce(const Point
   return corrs;
 }
 
-ICPCorrespondence MeshDeformer::findClosestPoint_triangle(float px, float py, float pz, const float *v0, const float *v1, const float *v2)
+ICPCorrespondence MeshDeformer::findClosestPoint_triangle(double px, double py, double pz, const double *v0, const double *v1, const double *v2)
 {
   ICPCorrespondence corr;
-  PhGUtils::Point3f hit;
+  PhGUtils::Point3d hit;
   corr.d = PhGUtils::pointToTriangleDistance(
-    PhGUtils::Point3f(px, py, pz),
-    PhGUtils::Point3f(v0[0], v0[1], v0[2]),
-    PhGUtils::Point3f(v1[0], v1[1], v1[2]),
-    PhGUtils::Point3f(v2[0], v2[1], v2[2]),
+    PhGUtils::Point3d(px, py, pz),
+    PhGUtils::Point3d(v0[0], v0[1], v0[2]),
+    PhGUtils::Point3d(v1[0], v1[1], v1[2]),
+    PhGUtils::Point3d(v2[0], v2[1], v2[2]),
     hit
     );
   corr.hit[0] = hit.x; corr.hit[1] = hit.y; corr.hit[2] = hit.z;

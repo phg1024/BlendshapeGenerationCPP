@@ -13,7 +13,7 @@ vector<int> loadLandmarks(const string &filename) {
 }
 
 void testMatrix() {
-  BasicMatrix<float> A = BasicMatrix<float>::random(5, 5);
+  BasicMatrix<double> A = BasicMatrix<double>::random(5, 5);
   cout << A << endl;
   auto B = A.inv();
   cout << B << endl;
@@ -24,29 +24,43 @@ void testMatrix() {
 
 void testSparseMatrix() {
   /*
-  1 0 0 0 1
-  0 1 0 1 0
-  0 0 1 0 0
-  0 0 0 1 0
+  2 -1 0 0 0
+  -1 2 -1 0 0
+  0 -1 2 -1 0
+  0 0 -1 2 -1
+  0 0 0 -1 2
   */
-  SparseMatrix<float> M(4, 5);
+  SparseMatrix<double> M(5, 5);
   M.resize(6);
-  M.Ai = {0, 0, 1, 1, 2, 3};
-  M.Aj = {0, 4, 1, 3, 2, 3};
-  M.Av = {1, 2, 3, 4, 5, 6};
+  M.Ai = {0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4};
+  M.Aj = {0, 1, 0, 1, 2, 1, 2, 3, 2, 3, 4, 3, 4};
+  M.Av = {2, -1, -1, 2, -1, -1, 2, -1, -1, 2, -1, -1, 2};
 
   cout << M << endl;
   cout << M.transposed() << endl;
 
-  vector<float> b = { 1, 1, 1, 1, 1 };
-  cout << M.selfProduct() << endl;
-  
-  auto x = M.solve(b);
+  vector<double> b = { 1, 1, 1, 1, 1 };
+  auto MtM = M.selfProduct();
+  cout << MtM << endl;
+
+  cholmod_common common;
+  cholmod_start(&common);
+
+  auto Mcsc = MtM.convertToCSC(&common);
+  cout << &common << endl;
+  cholmod_check_common(&common);
+
+  cholmod_print_sparse(Mcsc, "Mcsc", &common);
+  cholmod_free_sparse(&Mcsc, &common);
+
+  auto x = M.solve(b, &common);
   for (int i = 0; i < x.size(); ++i) cout << x[i] << ' ';
   cout << endl;
-  vector<float> b1 = M * x;
+  vector<double> b1 = M * x;
   for (int i = 0; i < b1.size(); ++i) cout << b1[i] << ' ';
   cout << endl;
+
+  cholmod_finish(&common);
 }
 
 int main(int argc, char *argv[])
@@ -57,8 +71,9 @@ int main(int argc, char *argv[])
   w.show();
   return a.exec();
 #else
-  testSparseMatrix();
-  return 0;
+
+    testSparseMatrix();
+    return 0;
 
   BasicMesh m;
   m.load("C:\\Users\\Peihong\\Desktop\\Data\\FaceWarehouse_Data_0\\Tester_1\\Blendshape\\shape_0.obj");

@@ -6,10 +6,10 @@
 
 struct ICPCorrespondence {
   int tidx;             // triangle index
-  float bcoords[3];     // bary-centric coordinates
-  float hit[3];         // point on triangle
-  float d;
-  float weight;         // weight of this point
+  double bcoords[3];     // bary-centric coordinates
+  double hit[3];         // point on triangle
+  double d;
+  double weight;         // weight of this point
 };
 
 class MeshDeformer
@@ -25,8 +25,8 @@ public:
 
 protected:
   vector<ICPCorrespondence> findClosestPoints_bruteforce(const PointCloud &P, const BasicMesh &mesh);
-  ICPCorrespondence findClosestPoint_triangle(float px, float py, float pz,
-                                              const float *v0, const float *v1, const float *v2);
+  ICPCorrespondence findClosestPoint_triangle(double px, double py, double pz,
+                                              const double *v0, const double *v1, const double *v2);
 
 private:
   BasicMesh S;

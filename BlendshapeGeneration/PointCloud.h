@@ -8,7 +8,7 @@ struct PointCloud
   ~PointCloud();
 
   friend ostream& operator<<(ostream &os, const PointCloud &P);
-  BasicMatrix<float> points;
+  BasicMatrix<double> points;
 };
 
 

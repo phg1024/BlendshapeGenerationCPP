@@ -31,6 +31,6 @@ struct BasicMesh
   void write(const string &filename);
 
   BasicMatrix<int> faces;
-  BasicMatrix<float> verts;
+  BasicMatrix<double> verts;
 };
 
