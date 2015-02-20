@@ -1,6 +1,6 @@
 #pragma once
 
-#include "BasicMatrix.hpp"
+#include "ndarray.hpp"
 
 struct PointCloud
 {
@@ -8,7 +8,7 @@ struct PointCloud
   ~PointCloud();
 
   friend ostream& operator<<(ostream &os, const PointCloud &P);
-  BasicMatrix<double> points;
+  Array2D<double> points;
 };
 
 

@@ -1,5 +1,5 @@
 #pragma once
-#include "BasicMatrix.hpp"
+#include "ndarray.hpp"
 
 #include "Geometry/MeshLoader.h"
 
@@ -30,7 +30,7 @@ struct BasicMesh
   void load(const string &filename);
   void write(const string &filename);
 
-  BasicMatrix<int> faces;
-  BasicMatrix<double> verts;
+  Array2D<int> faces;
+  Array2D<double> verts;
 };
 

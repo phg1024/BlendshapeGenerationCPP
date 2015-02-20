@@ -1,5 +1,7 @@
 #include "MeshDeformer.h"
 #include "Geometry/geometryutils.hpp"
+#include "densematrix.h"
+#include "sparsematrix.h"
 
 MeshDeformer::MeshDeformer()
 {
@@ -13,8 +15,8 @@ MeshDeformer::~MeshDeformer()
 BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const PointCloud &lm_points)
 {
   cout << "deformation with mesh ..." << endl;
-  int nverts = S.verts.rows;
-  int nfaces = S.faces.rows;
+  int nverts = S.verts.nrow;
+  int nfaces = S.faces.nrow;
 
   auto &V = S.verts;
   auto &F = S.faces;
@@ -32,7 +34,7 @@ BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const PointCloud &lm_
   }
 
   // compute delta_i
-  BasicMatrix<double> delta(nverts, 3);
+  Array2D<double> delta(nverts, 3);
   for (int i = 0; i < nverts; ++i) {
     auto& Ni = N[i];
     double sx = 0, sy = 0, sz = 0;
@@ -51,19 +53,28 @@ BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const PointCloud &lm_
   }
 
   auto makeVMatrix = [&](double x, double y, double z) {
-    BasicMatrix<double> V = BasicMatrix<double>::zeros(3, 7);
-    V(0) = x; V(2) = z; V(3) = -y; V(4) = 1.0;
-    V(7) = y; V(9) = -z; V(10) = x; V(12) = 1.0;
-    V(14) = z; V(15) = y; V(16) = -x; V(20) = 1.0;
+    DenseMatrix V = DenseMatrix::zeros(3, 7);
+    /*
+     *     x   0  z -y 1 0 0
+     *     y  -z  0  x 0 1 0
+     *     z   y -x  0 0 0 1
+     */
+    V(0) =  x; V(1) =  y;  V(2) =  z;
+               V(4) = -z;  V(5) =  y;
+    V(6) =  z;             V(8) = -x;
+    V(9) = -y; V(10) = x;
+    V(12) = 1;
+               V(16) = 1;
+                           V(20) = 1;
 
     return V;
   };
 
   // compute A matrix
-  vector<BasicMatrix<double>> A(nverts);
+  vector<DenseMatrix> A(nverts);
   for (int i = 0; i < nverts; ++i) {
     auto& Ni = N[i];
-    A[i] = BasicMatrix<double>::zeros(3*(Ni.size()+1), 7);
+    A[i] = DenseMatrix::zeros(3*(Ni.size()+1), 7);
     
     int offset_i = i * 3;
     // set the vertex's terms
@@ -90,34 +101,41 @@ BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const PointCloud &lm_
   }
 
   auto makeDMatrix = [&](double x, double y, double z) {
-    BasicMatrix<double> V = BasicMatrix<double>::zeros(3, 7);
-    V(0) = x; V(2) = z; V(3) = -y;
-    V(7) = y; V(9) = -z; V(10) = x;
-    V(14) = z; V(15) = y; V(16) = -x;
+    DenseMatrix V = DenseMatrix::zeros(3, 7);
+    /*
+     *     x   0  z -y 1 0 0
+     *     y  -z  0  x 0 1 0
+     *     z   y -x  0 0 0 1
+     */
+    V(0) =  x; V(1) =  y;  V(2) =  z;
+               V(4) = -z;  V(5) =  y;
+    V(6) =  z;             V(8) = -x;
+    V(9) = -y; V(10) = x;
 
     return V;
   };
 
   // compute T matrix
-  vector<BasicMatrix<double>> Tm(nverts);
+  vector<DenseMatrix> Tm(nverts);
   for (int i = 0; i < nverts; ++i) {
     int offset_i = i * 3;
     auto Di = makeDMatrix(delta(offset_i), delta(offset_i+1), delta(offset_i+2));
     auto& Ai = A[i];
     auto At = A[i].transposed();
-    Tm[i] = Di * ((At * Ai).inv() * At);
+    auto invAtAi = (At * Ai).inv();
+    Tm[i] = Di * (invAtAi * At);
   }
 
   BasicMesh D = S.clone(); // make a copy of the source mesh
 
   // generate a point cloud from the target mesh  
   int npoints = 0;
-  for (int i = 0; i < T.verts.rows; ++i) {
+  for (int i = 0; i < T.verts.nrow; ++i) {
     if (T.verts(i * 3 + 2) > -0.1) ++npoints;
   }
   PointCloud P;
   P.points.resize(npoints, 3);
-  for (int i = 0, ridx=0; i < T.verts.rows; ++i) {
+  for (int i = 0, ridx=0; i < T.verts.nrow; ++i) {
     int offset_i = i * 3;
     if (T.verts(offset_i + 2) > -0.1) {
       int offset = ridx * 3;      
@@ -139,7 +157,7 @@ BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const PointCloud &lm_
   const int itmax = 1;
   int iters = 0;
 
-  double w_icp = 0.0, w_icp_step = landmarks.size() / (double)npoints;
+  double w_icp = 1e-6, w_icp_step = landmarks.size() / (double)npoints;
   double w_data = 1.0, w_data_step = 0.1;
   double w_dist = 100.0, w_dist_step = 10.0;
   double w_prior = 0.1, w_prior_step = 0.0095;
@@ -178,24 +196,28 @@ BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const PointCloud &lm_
     // add landmarks terms
     int ndata = landmarks.size();
     nterms += ndata * 3;
-    nrows += ndata;
+    nrows += ndata*3;
 
     // add prior terms
-    int nprior = S.verts.rows;
+    int nprior = S.verts.nrow;
     nterms += nprior * 3;
-    nrows += nprior;
+    nrows += nprior * 3;
 
     // add distortion terms
     nterms += ndistortion;
-    nrows += S.verts.rows * 3;
+    nrows += S.verts.nrow * 3;
 
-    SparseMatrix<double> M(nrows, nverts*3);
-    M.resize(nterms);
+    cout << "nterms = " << nterms << endl;
+    cout << "nrows = " << nrows << endl;
+
+    SparseMatrix M(nrows, nverts*3, nterms);
     vector<double> b(nterms, 0);
-    int midx = 0;
     int roffset = 0;
 
+    cout << "Filling in matrix elements ..." << endl;
+
     // ICP term
+    cout << "ICP terms ..." << endl;
     for (int i = 0; i < npoints; ++i) {
       double wi = icp_corr[i].weight * w_icp;
       int toffset = icp_corr[i].tidx*3;
@@ -206,92 +228,117 @@ BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const PointCloud &lm_
       double wi1 = icp_corr[i].bcoords[1] * wi;
       double wi2 = icp_corr[i].bcoords[2] * wi;
       
-      int ioffset = i * 3;
-      M.Ai[midx] = ioffset; M.Aj[midx] = v0offset + 0; M.Av[midx] = wi0; ++midx;
-      M.Ai[midx] = ioffset; M.Aj[midx] = v1offset + 0; M.Av[midx] = wi1; ++midx;
-      M.Ai[midx] = ioffset; M.Aj[midx] = v2offset + 0; M.Av[midx] = wi2; ++midx;
-      b[ioffset] = P.points(ioffset) * wi;
-      ++ioffset;
+      M.append(roffset, v0offset, wi0); M.append(roffset, v1offset, wi1); M.append(roffset, v2offset, wi2);
+      b[roffset] = P.points(roffset) * wi;
+      ++roffset;
 
-      M.Ai[midx] = ioffset; M.Aj[midx] = v0offset + 1; M.Av[midx] = wi0; ++midx;
-      M.Ai[midx] = ioffset; M.Aj[midx] = v1offset + 1; M.Av[midx] = wi1; ++midx;
-      M.Ai[midx] = ioffset; M.Aj[midx] = v2offset + 1; M.Av[midx] = wi2; ++midx;
-      b[ioffset] = P.points(ioffset) * wi;
-      ++ioffset;
-      
-      M.Ai[midx] = ioffset; M.Aj[midx] = v0offset + 2; M.Av[midx] = wi0; ++midx;
-      M.Ai[midx] = ioffset; M.Aj[midx] = v1offset + 2; M.Av[midx] = wi1; ++midx;
-      M.Ai[midx] = ioffset; M.Aj[midx] = v2offset + 2; M.Av[midx] = wi2; ++midx;
-      b[ioffset] = P.points(ioffset) * wi;
-      ++ioffset;
+      M.append(roffset, v0offset+1, wi0); M.append(roffset, v1offset+1, wi1); M.append(roffset, v2offset+1, wi2);
+      b[roffset] = P.points(roffset) * wi;
+      ++roffset;
+
+      M.append(roffset, v0offset+2, wi0); M.append(roffset, v1offset+2, wi1); M.append(roffset, v2offset+2, wi2);
+      b[roffset] = P.points(roffset) * wi;
+      ++roffset;
     }
-    roffset += npoints * 3;
 
     // landmarks term term
-    for (int i = 0, ioffset = 0; i < ndata; ++i) {
+    cout << "landmarks terms ..." << endl;
+    for (int i = 0, ioffset=0; i < ndata; ++i) {
       int dstart = landmarks[i] * 3;
       double wi = w_data;
-      M.Ai[midx] = roffset + i; M.Aj[midx] = dstart + 1; M.Av[midx] = wi; ++midx;
-      M.Ai[midx] = roffset + i; M.Aj[midx] = dstart + 2; M.Av[midx] = wi; ++midx;
-      M.Ai[midx] = roffset + i; M.Aj[midx] = dstart + 3; M.Av[midx] = wi; ++midx;
+      cout << i << " " << dstart << " " << roffset << endl;
 
-      b[roffset + ioffset] = lm_points.points(ioffset) * wi; ++ioffset;
-      b[roffset + ioffset] = lm_points.points(ioffset) * wi; ++ioffset;
-      b[roffset + ioffset] = lm_points.points(ioffset) * wi; ++ioffset;
+      M.append(roffset, dstart, wi); ++dstart;
+      b[roffset] = lm_points.points(ioffset) * wi;
+      ++roffset; ++ioffset;
+
+      M.append(roffset, dstart, wi); ++dstart;
+      b[roffset] = lm_points.points(ioffset) * wi;
+      ++roffset; ++ioffset;
+
+      M.append(roffset, dstart, wi);
+      b[roffset] = lm_points.points(ioffset) * wi;
+      ++roffset; ++ioffset;
     }
-    roffset += ndata;
 
     // prior term, i.e. similarity to source mesh
+    cout << "prior terms ..." << endl;
     for (int i = 0, ioffset = 0; i < nprior; ++i) {
-      int dstart = i * 3;
       double wi = w_prior;
-      M.Ai[midx] = roffset + i; M.Aj[midx] = dstart + 1; M.Av[midx] = wi; ++midx;
-      M.Ai[midx] = roffset + i; M.Aj[midx] = dstart + 2; M.Av[midx] = wi; ++midx;
-      M.Ai[midx] = roffset + i; M.Aj[midx] = dstart + 3; M.Av[midx] = wi; ++midx;
+      M.append(roffset, ioffset, wi);
+      b[roffset] = S.verts(ioffset) * wi;
+      ++roffset; ++ioffset;
 
-      b[roffset + ioffset] = S.verts(ioffset) * wi; ++ioffset;
-      b[roffset + ioffset] = S.verts(ioffset) * wi; ++ioffset;
-      b[roffset + ioffset] = S.verts(ioffset) * wi; ++ioffset;
+      M.append(roffset, ioffset, wi);
+      b[roffset] = S.verts(ioffset) * wi;
+      ++roffset; ++ioffset;
+
+      M.append(roffset, ioffset, wi);
+      b[roffset] = S.verts(ioffset) * wi;
+      ++roffset; ++ioffset;
     }
-    roffset += nprior;
 
     // Laplacian distortion term
+    cout << "Laplacian terms ..." << endl;
     for (int i = 0, ioffset = 0; i < nverts; ++i) {
       auto& Ti = Tm[i];
       auto& Ni = N[i];
       double wi = w_dist;
 
-      for (int k = 0; k < 3; ++k) {
+      for (int k = ioffset; k < ioffset+3; ++k) {
         // deformation part
-        M.Ai[midx] = roffset + ioffset + k; M.Aj[midx] = ioffset + 0; M.Av[midx] = (1 - Ti(k, 0))*wi; midx = midx + 1;
-        M.Ai[midx] = roffset + ioffset + k; M.Aj[midx] = ioffset + 1; M.Av[midx] = -Ti(k, 1)*wi; midx = midx + 1;
-        M.Ai[midx] = roffset + ioffset + k; M.Aj[midx] = ioffset + 2; M.Av[midx] = -Ti(k, 2)*wi; midx = midx + 1;
+        M.append(roffset+k, ioffset+0, (1 - Ti(k, 0))*wi);
+        M.append(roffset+k, ioffset+1, (0 - Ti(k, 1))*wi);
+        M.append(roffset+k, ioffset+2, (0 - Ti(k, 2))*wi);
 
         int j = 0;
         double wij = -1.0 / Ni.size();
         for (auto Nij : Ni) {
           int jstart = Nij * 3;
           int joffset = j * 3;
-          M.Ai[midx] = roffset + ioffset + k; M.Aj[midx] = jstart + 0; M.Av[midx] = (wij - Ti(k, joffset))*wi; midx = midx + 1;
-          M.Ai[midx] = roffset + ioffset + k; M.Aj[midx] = jstart + 1; M.Av[midx] = -Ti(k, joffset + 1)*wi; midx = midx + 1;
-          M.Ai[midx] = roffset + ioffset + k; M.Aj[midx] = jstart + 2; M.Av[midx] = -Ti(k, joffset + 2)*wi; midx = midx + 1;
+          M.append(roffset+k, jstart+0, (wij - Ti(k, joffset))*wi);
+          M.append(roffset+k, jstart+1, (0 - Ti(k, joffset+1))*wi);
+          M.append(roffset+k, jstart+2, (0 - Ti(k, joffset+2))*wi);
         }
       }
 
       ioffset += 3;
     }
 
+    cout << nterms << endl;
+
     // solve sparse linear system
-    
+    cout << "M matrix assembled..." << endl;
     // compute M' * M
-    SparseMatrix<double> MtM = M.selfProduct();
+    cout << "computing M'*M..." << endl;
+    auto Ms = M.to_sparse();
+    auto Mt = cholmod_transpose(Ms, 2, &common);
+    auto MtM = cholmod_aat(Mt, NULL, 0, 1, &common);
+    MtM->stype = 1;
         
     // compute M' * b
-    vector<double> Mtb = M * b;
+    cout << "computing M'*b..." << endl;
+    cholmod_dense *bs = cholmod_allocate_dense(Ms->nrow, 1, Ms->nrow, CHOLMOD_REAL, &common);
+    memcpy(bs->x, &(b[0]), sizeof(double)*Ms->nrow);
+    cholmod_dense *Mtb = cholmod_allocate_dense(MtM->nrow, 1, MtM->nrow, CHOLMOD_REAL, &common);
+    double alpha[2] = {1, 0}; double beta[2] = {0, 0};
 
+    cholmod_print_sparse(Mt, "Mt", &common);
+    cholmod_print_dense(bs, "bs", &common);
+    cholmod_print_dense(Mtb, "Mtb", &common);
+    cholmod_sdmult(Mt, 0, alpha, beta, bs, Mtb, &common);
+
+    cout << "Solving (M'*M)\(M'*b) ..." << endl;
     // solve (M'*M)\(M'*b)
     // solution vector
-    vector<double> x = MtM.solve(Mtb, &common);
+    cholmod_factor *L = cholmod_analyze(MtM, &common);
+    cholmod_factorize(MtM, L, &common);
+    cholmod_dense *x = cholmod_solve(CHOLMOD_A, L, Mtb, &common);
+    cout << "done." << endl;
+
+    ofstream fout("x.txt");
+    for(int xidx=0;xidx=x->nrow;++xidx) fout << ((double*)x->x) [xidx] << endl;
+    fout.close();
 
     // update weighting factors
     // increase w_icp
@@ -318,8 +365,8 @@ BasicMesh MeshDeformer::deformWithPoints(const PointCloud &P, const PointCloud &
 
 vector<ICPCorrespondence> MeshDeformer::findClosestPoints_bruteforce(const PointCloud &P, const BasicMesh &mesh)
 {
-  int nfaces = mesh.faces.rows;
-  int npoints = P.points.rows;
+  int nfaces = mesh.faces.nrow;
+  int npoints = P.points.nrow;
   vector<ICPCorrespondence> corrs(npoints);
 #pragma omp parallel for
   for (int pidx = 0; pidx < npoints; ++pidx) {

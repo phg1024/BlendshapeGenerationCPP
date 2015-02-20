@@ -2,7 +2,7 @@
 #include "common.h"
 #include "BasicMesh.h"
 #include "PointCloud.h"
-#include "SparseMatrix.hpp"
+#include "sparsematrix.h"
 
 struct ICPCorrespondence {
   int tidx;             // triangle index

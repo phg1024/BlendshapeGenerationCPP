@@ -1,6 +1,10 @@
+#include "common.h"
+
 #include "blendshapegeneration.h"
 #include <QtWidgets/QApplication>
 
+#include "densematrix.h"
+#include "densevector.h"
 #include "BasicMesh.h"
 #include "MeshDeformer.h"
 
@@ -8,20 +12,24 @@ vector<int> loadLandmarks(const string &filename) {
   const int npts = 73;
   vector<int> v(npts);
   ifstream fin(filename);
-  for (int i = 0; i < npts; ++i) fin >> v[i];
+  for (int i = 0; i < npts; ++i) {
+    fin >> v[i];
+    cout << v[i] << endl;
+  }
   return v;
 }
 
 void testMatrix() {
-  BasicMatrix<double> A = BasicMatrix<double>::random(5, 5);
-  cout << A << endl;
+  DenseMatrix A = DenseMatrix::random(5, 5);
+  cout << "A = \n" << A << endl;
   auto B = A.inv();
-  cout << B << endl;
-  cout << B.transposed() << endl;
-  cout << A * B << endl;
-  cout << B * A << endl;
+  cout << "B = \n" << B << endl;
+  cout << "Bt = \n" << B.transposed() << endl;
+  cout << "A*B = \n" << A * B << endl;
+  cout << "B*A = \n" << B * A << endl;
 }
 
+#if 1
 void testSparseMatrix() {
   /*
   2 -1 0 0 0
@@ -30,38 +38,28 @@ void testSparseMatrix() {
   0 0 -1 2 -1
   0 0 0 -1 2
   */
-  SparseMatrix<double> M(5, 5);
-  M.resize(6);
-  M.Ai = {0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4};
-  M.Aj = {0, 1, 0, 1, 2, 1, 2, 3, 2, 3, 4, 3, 4};
-  M.Av = {2, -1, -1, 2, -1, -1, 2, -1, -1, 2, -1, -1, 2};
+  SparseMatrix M(5, 5, 13);
+  M.append(0, 0, 2); M.append(0, 1, -1);
+  M.append(1, 0, -1); M.append(1, 1, 2); M.append(1, 2, -1);
+  M.append(2, 1, -1); M.append(2, 2, 2); M.append(2, 3, -1);
+  M.append(3, 2, -1); M.append(3, 3, 2); M.append(3, 4, -1);
+  M.append(4, 3, -1); M.append(4, 4, 2);
+  M.append(2, 1, 2);
 
-  cout << M << endl;
-  cout << M.transposed() << endl;
-
-  vector<double> b = { 1, 1, 1, 1, 1 };
   auto MtM = M.selfProduct();
-  cout << MtM << endl;
+  cholmod_print_sparse(MtM, "MtM", global::cm);
 
-  cholmod_common common;
-  cholmod_start(&common);
+  DenseVector b(5);
+  for(int i=0;i<5;++i) b(i) = 1.0;
 
-  auto Mcsc = MtM.convertToCSC(&common);
-  cout << &common << endl;
-  cholmod_check_common(&common);
-
-  cholmod_print_sparse(Mcsc, "Mcsc", &common);
-  cholmod_free_sparse(&Mcsc, &common);
-
-  auto x = M.solve(b, &common);
-  for (int i = 0; i < x.size(); ++i) cout << x[i] << ' ';
+  auto x = M.solve(b, true);
+  for (int i = 0; i < x.length(); ++i) cout << x(i) << ' ';
   cout << endl;
-  vector<double> b1 = M * x;
-  for (int i = 0; i < b1.size(); ++i) cout << b1[i] << ' ';
+  DenseVector b1 = M * x;
+  for (int i = 0; i < b1.length(); ++i) cout << b1(i) << ' ';
   cout << endl;
-
-  cholmod_finish(&common);
 }
+#endif
 
 int main(int argc, char *argv[])
 {
@@ -71,27 +69,33 @@ int main(int argc, char *argv[])
   w.show();
   return a.exec();
 #else
+  global::initialize();
 
-    testSparseMatrix();
-    return 0;
+  testMatrix();
+  testSparseMatrix();
+
+  return 0;
+  const string datapath = "/Users/phg/Data/FaceWarehouse_Data_0/";
 
   BasicMesh m;
-  m.load("C:\\Users\\Peihong\\Desktop\\Data\\FaceWarehouse_Data_0\\Tester_1\\Blendshape\\shape_0.obj");
+  m.load(datapath + "Tester_1/Blendshape/shape_0.obj");
 
   MeshDeformer deformer;
   deformer.setSource(m);
 
-  vector<int> landmarks = loadLandmarks("C:\\Users\\Peihong\\Desktop\\Code\\BlendshapeGeneration\\BlendshapeGeneration\\landmarks_74_new.txt");
+  vector<int> landmarks = loadLandmarks(datapath+"landmarks_74_new.txt");
   deformer.setLandmarks(landmarks);
 
   BasicMesh T;
-  T.load("C:\\Users\\Peihong\\Desktop\\Data\\FaceWarehouse_Data_0\\Tester_1\\TrainingPose\\pose_1.obj");
+  T.load(datapath + "Tester_1/TrainingPose/pose_1.obj");
 
   PointCloud lm_points;
   lm_points.points = T.verts.row(landmarks);
   BasicMesh D = deformer.deformWithMesh(T, lm_points);
 
   D.write("deformed.obj");
+
+  global::finalize();
   return 0;
 #endif
 }

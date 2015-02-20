@@ -46,7 +46,7 @@ void BasicMesh::write(const string &filename)
 {  
   string content;
   // write verts
-  for (int i = 0,offset=0; i < verts.rows; ++i) {
+  for (int i = 0,offset=0; i < verts.nrow; ++i) {
     content += "v ";
     content += to_string(verts(offset)) + " "; ++offset;
     content += to_string(verts(offset)) + " "; ++offset;
@@ -54,7 +54,7 @@ void BasicMesh::write(const string &filename)
   }
 
   // write faces
-  for (int i = 0, offset = 0; i < faces.rows; ++i) {
+  for (int i = 0, offset = 0; i < faces.nrow; ++i) {
     content += "f ";
     content += to_string(faces(offset) + 1) + " "; ++offset;
     content += to_string(faces(offset) + 1) + " "; ++offset;

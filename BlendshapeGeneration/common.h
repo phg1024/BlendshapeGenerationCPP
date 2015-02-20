@@ -30,3 +30,10 @@ using boost::shared_ptr;
 #endif
 
 using namespace std;
+
+#include "cholmod.h"
+namespace global {
+    void initialize();
+    void finalize();
+    extern cholmod_common *cm;
+}
