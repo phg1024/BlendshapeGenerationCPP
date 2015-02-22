@@ -104,9 +104,9 @@ DenseMatrix DenseMatrix::operator*(const DenseMatrix &rhs) {
 
 DenseMatrix DenseMatrix::transposed() const {
   DenseMatrix res(ptr->ncol, ptr->nrow);
-  for (int i = 0,idx=0; i < ptr->ncol; ++i) {
+  for (int i = 0; i < ptr->ncol; ++i) {
     for (int j = 0; j < ptr->nrow; ++j) {
-      res(i, j) = x[idx]; ++idx;
+      res(i, j) = (*this)(j, i);
     }
   }
   return res;

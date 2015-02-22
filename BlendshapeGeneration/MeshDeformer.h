@@ -17,13 +17,14 @@ class MeshDeformer
 public:
   MeshDeformer();
   ~MeshDeformer();
-  
+
   void setSource(const BasicMesh &src) { S = src; }
   void setLandmarks(const vector<int> &lms) { landmarks = lms; }
   BasicMesh deformWithMesh(const BasicMesh &T, const PointCloud &lm_points);
   BasicMesh deformWithPoints(const PointCloud &P, const PointCloud &lm_points);
 
 protected:
+  vector<ICPCorrespondence> findClosestPoints_tree(const PointCloud &P, const BasicMesh &mesh);
   vector<ICPCorrespondence> findClosestPoints_bruteforce(const PointCloud &P, const BasicMesh &mesh);
   ICPCorrespondence findClosestPoint_triangle(double px, double py, double pz,
                                               const double *v0, const double *v1, const double *v2);

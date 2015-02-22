@@ -74,8 +74,13 @@ int main(int argc, char *argv[])
   testMatrix();
   testSparseMatrix();
 
-  return 0;
+#ifdef __APPLE__
   const string datapath = "/Users/phg/Data/FaceWarehouse_Data_0/";
+#endif
+
+#ifdef __linux__
+  const string datapath = "/home/phg/Data/FaceWarehouse_Data_0/";
+#endif
 
   BasicMesh m;
   m.load(datapath + "Tester_1/Blendshape/shape_0.obj");
@@ -86,14 +91,15 @@ int main(int argc, char *argv[])
   vector<int> landmarks = loadLandmarks(datapath+"landmarks_74_new.txt");
   deformer.setLandmarks(landmarks);
 
+  int objidx = 2;
   BasicMesh T;
-  T.load(datapath + "Tester_1/TrainingPose/pose_1.obj");
+  T.load(datapath + "Tester_1/TrainingPose/pose_" + to_string(objidx) + ".obj");
 
   PointCloud lm_points;
   lm_points.points = T.verts.row(landmarks);
   BasicMesh D = deformer.deformWithMesh(T, lm_points);
 
-  D.write("deformed.obj");
+  D.write("deformed" + to_string(objidx) + ".obj");
 
   global::finalize();
   return 0;

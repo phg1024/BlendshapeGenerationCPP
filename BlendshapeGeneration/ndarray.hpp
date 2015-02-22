@@ -36,6 +36,12 @@ struct Array2D {
     return data.get() + ridx*ncol;
   }
 
+  void save(const string &filename) {
+    ofstream fout(filename);
+    fout << (*this);
+    fout.close();
+  }
+
   template <typename AT>
   friend ostream& operator<<(ostream &os, const Array2D<AT> &A);
 

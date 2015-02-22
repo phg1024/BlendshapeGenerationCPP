@@ -23,13 +23,16 @@
 #include <unordered_set>
 #endif
 #include <string>
-
+#include <cstring>
+#include <memory>
 #if USE_BOOST
 #include <boost/shared_ptr.hpp>
 using boost::shared_ptr;
 #endif
 
 using namespace std;
+
+#include "Utils/Timer.h"
 
 #include "cholmod.h"
 namespace global {

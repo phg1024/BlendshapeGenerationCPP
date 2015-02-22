@@ -43,7 +43,7 @@ void BasicMesh::load(const string &filename)
 }
 
 void BasicMesh::write(const string &filename)
-{  
+{
   string content;
   // write verts
   for (int i = 0,offset=0; i < verts.nrow; ++i) {
@@ -60,7 +60,7 @@ void BasicMesh::write(const string &filename)
     content += to_string(faces(offset) + 1) + " "; ++offset;
     content += to_string(faces(offset) + 1) + "\n"; ++offset;
   }
- 
+
   ofstream fout(filename);
   fout << content << endl;
   fout.close();

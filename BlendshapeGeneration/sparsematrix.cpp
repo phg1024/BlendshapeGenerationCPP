@@ -19,7 +19,7 @@ SparseMatrix &SparseMatrix::operator=(const SparseMatrix &)
 
 void SparseMatrix::append(int i, int j, double v)
 {
-  if( ptr->nnz +1 >= ptr->nzmax ) {
+  if( ptr->nnz +1 > ptr->nzmax ) {
     cout << "need resize ..." << endl;
     resize(ptr->nzmax*2);
   }
