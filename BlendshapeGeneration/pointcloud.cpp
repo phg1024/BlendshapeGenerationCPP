@@ -1,4 +1,4 @@
-#include "PointCloud.h"
+#include "pointcloud.h"
 
 
 PointCloud::PointCloud()

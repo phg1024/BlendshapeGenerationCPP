@@ -4,9 +4,35 @@
 #include "common.h"
 
 template <typename T>
+struct Array1D {
+  Array1D():nrow(0), data(shared_ptr<T>(nullptr)){}
+  Array1D(int n):nrow(n), data(shared_ptr<T>(new T[n])){}
+  Array1D(const Array1D &other):nrow(other.nrow) {
+    data = shared_ptr<T>(new T[nrow]);
+    memcpy(data.get(), other.data.get(), sizeof(T)*nrow*ncol);
+  }
+  Array1D clone() const {
+    Array1D ret(nrow);
+    memcpy(ret.data.get(), data.get(), sizeof(T)*nrow);
+    return ret;
+  }
+
+  T& operator()(int idx) { return data.get()[idx]; }
+  const T& operator()(int idx) const { return data.get()[idx]; }
+
+  int nrow;
+  shared_ptr<T> data;
+};
+
+template <typename T>
 struct Array2D {
   Array2D():nrow(0), ncol(0), data(shared_ptr<T>(nullptr)){}
   Array2D(int m, int n):nrow(m), ncol(n), data(shared_ptr<T>(new T[m*n])){}
+  Array2D(const Array2D &other):nrow(other.nrow), ncol(other.ncol) {
+    data = shared_ptr<T>(new T[other.nrow*other.ncol]);
+    memcpy(data.get(), other.data.get(), sizeof(T)*nrow*ncol);
+  }
+
   Array2D clone() const {
     Array2D ret(nrow, ncol);
     memcpy(ret.data.get(), data.get(), sizeof(T)*nrow*ncol);
@@ -25,6 +51,20 @@ struct Array2D {
       for(int j=0;j<ncol;++j) ret(i, j) = (*this)(rowIndices[i], j);
     }
     return ret;
+  }
+
+  Array2D operator-(const Array2D &rhs) {
+    if( nrow != rhs.nrow || ncol != rhs.ncol ) {
+      throw "array dimension does not match";
+    }
+    else {
+      Array2D res((*this));
+      int n = nrow * ncol;
+      for(int i=0;i<n;++i) {
+        res[i] -= rhs(i);
+      }
+      return res;
+    }
   }
 
   void resize(int m, int n) {

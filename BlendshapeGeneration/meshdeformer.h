@@ -1,7 +1,7 @@
 #pragma once
 #include "common.h"
-#include "BasicMesh.h"
-#include "PointCloud.h"
+#include "basicmesh.h"
+#include "pointcloud.h"
 #include "sparsematrix.h"
 
 struct ICPCorrespondence {

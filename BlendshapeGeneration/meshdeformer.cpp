@@ -1,4 +1,4 @@
-#include "MeshDeformer.h"
+#include "meshdeformer.h"
 #include "Geometry/geometryutils.hpp"
 #include "densematrix.h"
 #include "sparsematrix.h"

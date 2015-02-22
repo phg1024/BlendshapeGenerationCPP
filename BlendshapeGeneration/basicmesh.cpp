@@ -1,4 +1,4 @@
-#include "BasicMesh.h"
+#include "basicmesh.h"
 
 BasicMesh::BasicMesh()
 {
