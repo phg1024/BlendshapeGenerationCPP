@@ -10,13 +10,15 @@ public:
   MeshTransferer();
   ~MeshTransferer();
 
-  void setSource(const BasicMesh &src) { S = src; }
-  void setTarget(const BasicMesh &tgt) { T = tgt; }
+  void setSource(const BasicMesh &src) { S0 = src; }
+  void setTarget(const BasicMesh &tgt) { T0 = tgt; }
+  void setStationaryVertices(const vector<int> &sv) { stationary_vertices = sv; }
 
   BasicMesh transfer(const BasicMesh &A);
 
 private:
-  BasicMesh S, T;
+  BasicMesh S0, T0;
+  vector<int> stationary_vertices;
 };
 
 #endif // MESHTRANSFERER_H

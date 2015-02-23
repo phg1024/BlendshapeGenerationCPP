@@ -23,7 +23,7 @@ PointCloud::PointCloud(PointCloud &&other)
 PointCloud &PointCloud::operator=(const PointCloud &rhs)
 {
   if( this != &rhs ) {
-    points = other.points;
+    points = rhs.points;
   }
   return (*this);
 }
@@ -31,7 +31,7 @@ PointCloud &PointCloud::operator=(const PointCloud &rhs)
 PointCloud &PointCloud::operator=(PointCloud &&rhs)
 {
   if( this != &rhs ) {
-    points = std::move(other.points);
+    points = std::move(rhs.points);
   }
   return (*this);
 }

@@ -11,10 +11,11 @@ struct Array1D {
     data = shared_ptr<T>(new T[nrow]);
     memcpy(data.get(), other.data.get(), sizeof(T)*nrow);
   }
-  Array1D(Array1D &&other):nrow(other.nrow) {
-    data = other.data;
-    other.data.reset();
-  }
+
+//  Array1D(Array1D &&other):nrow(other.nrow) {
+//    data = other.data;
+//    other.data.reset();
+//  }
   Array1D clone() const {
     Array1D ret(nrow);
     memcpy(ret.data.get(), data.get(), sizeof(T)*nrow);
@@ -28,14 +29,14 @@ struct Array1D {
     }
     return (*this);
   }
-  Array1D &operator=(Array1D &&rhs) {
-    if( this != &rhs) {
-      nrow = rhs.nrow;
-      data = rhs.data;
-      rhs.data.reset();
-    }
-    return (*this);
-  }
+//  Array1D &operator=(Array1D &&rhs) {
+//    if( this != &rhs) {
+//      nrow = rhs.nrow;
+//      data = rhs.data;
+//      rhs.data.reset();
+//    }
+//    return (*this);
+//  }
   static Array1D zeros(int n) {
     Array1D ret(n);
     memset(ret.data.get(), 0, sizeof(T)*n);
@@ -57,10 +58,10 @@ struct Array2D {
     data = shared_ptr<T>(new T[other.nrow*other.ncol]);
     memcpy(data.get(), other.data.get(), sizeof(T)*nrow*ncol);
   }
-  Array2D(Array2D &&other):nrow(other.nrow), ncol(other.ncol) {
-    data = other.data;
-    other.data.reset();
-  }
+//  Array2D(Array2D &&other):nrow(other.nrow), ncol(other.ncol) {
+//    data = other.data;
+//    other.data.reset();
+//  }
 
   Array2D clone() const {
     Array2D ret(nrow, ncol);
@@ -78,15 +79,15 @@ struct Array2D {
     return (*this);
   }
 
-  Array2D& operator=(Array2D&& rhs) {
-    if( this != &rhs ) {
-      nrow = rhs.nrow;
-      ncol = rhs.ncol;
-      data = rhs.data;
-      rhs.data.reset();
-    }
-    return (*this);
-  }
+//  Array2D& operator=(Array2D&& rhs) {
+//    if( this != &rhs ) {
+//      nrow = rhs.nrow;
+//      ncol = rhs.ncol;
+//      data = rhs.data;
+//      rhs.data.reset();
+//    }
+//    return (*this);
+//  }
 
   static Array2D zeros(int m, int n) {
     Array2D ret(m, n);

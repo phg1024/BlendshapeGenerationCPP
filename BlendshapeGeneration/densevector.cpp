@@ -9,6 +9,6 @@ DenseVector::DenseVector(int n) {
 
 DenseVector::~DenseVector()
 {
-    cholmod_free_dense(&ptr, global::cm);
+  if( ptr != nullptr ) cholmod_free_dense(&ptr, global::cm);
 }
 

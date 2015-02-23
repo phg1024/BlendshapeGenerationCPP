@@ -14,11 +14,11 @@ PointCloud BasicMesh::samplePoints(int points_per_face, double zcutoff) const
   int npoints = 0;
   vector<int> validfaces;
 
-  for (int i = 0; i < T.faces.nrow; ++i) {
+  for (int i = 0; i < faces.nrow; ++i) {
     // sample 8 points per face
     int fidx = i * 3;
-    int v1 = T.faces(fidx), v2 = T.faces(fidx+1), v3 = T.faces(fidx+2);
-    double z1 = T.verts(v1*3+2), z2 = T.verts(v2*3+2), z3 = T.verts(v3*3+2);
+    int v1 = faces(fidx), v2 = faces(fidx+1), v3 = faces(fidx+2);
+    double z1 = verts(v1*3+2), z2 = verts(v2*3+2), z3 = verts(v3*3+2);
     double zc = (z1 + z2 + z3) / 3.0;
     if (zc > zcutoff) {
       npoints += points_per_face;
@@ -30,10 +30,10 @@ PointCloud BasicMesh::samplePoints(int points_per_face, double zcutoff) const
   P.points.resize(npoints, 3);
   for (int i = 0, offset=0; i < validfaces.size(); ++i) {
     int fidx = validfaces[i] * 3;
-    int v1 = T.faces(fidx), v2 = T.faces(fidx+1), v3 = T.faces(fidx+2);
-    double x1 = T.verts(v1*3), x2 = T.verts(v2*3), x3 = T.verts(v3*3);
-    double y1 = T.verts(v1*3+1), y2 = T.verts(v2*3+1), y3 = T.verts(v3*3+1);
-    double z1 = T.verts(v1*3+2), z2 = T.verts(v2*3+2), z3 = T.verts(v3*3+2);
+    int v1 = faces(fidx), v2 = faces(fidx+1), v3 = faces(fidx+2);
+    double x1 = verts(v1*3), x2 = verts(v2*3), x3 = verts(v3*3);
+    double y1 = verts(v1*3+1), y2 = verts(v2*3+1), y3 = verts(v3*3+1);
+    double z1 = verts(v1*3+2), z2 = verts(v2*3+2), z3 = verts(v3*3+2);
 
     for(int j=0;j<points_per_face;++j) {
         // sample a point

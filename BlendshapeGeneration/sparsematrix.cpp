@@ -1,6 +1,13 @@
 #include "sparsematrix.h"
 
 
+SparseMatrix::~SparseMatrix()
+{
+//  if( ptr != nullptr ) {
+//    cholmod_free_triplet(&ptr, global::cm);
+//  }
+}
+
 SparseMatrix::SparseMatrix(int m, int n, int nzmax)
 {
   ptr = cholmod_allocate_triplet(m, n, nzmax, 0, CHOLMOD_REAL, global::cm);
@@ -9,12 +16,17 @@ SparseMatrix::SparseMatrix(int m, int n, int nzmax)
 
 SparseMatrix::SparseMatrix(const SparseMatrix &other)
 {
-
+  ptr = cholmod_copy_triplet(other.ptr, global::cm);
+  resetPointers();
 }
 
-SparseMatrix &SparseMatrix::operator=(const SparseMatrix &)
+SparseMatrix &SparseMatrix::operator=(const SparseMatrix &rhs)
 {
-
+  if( this != &rhs ) {
+    if( ptr != nullptr ) cholmod_free_triplet(&ptr, global::cm);
+    ptr = cholmod_copy_triplet(rhs.ptr, global::cm);
+  }
+  return (*this);
 }
 
 void SparseMatrix::append(int i, int j, double v)

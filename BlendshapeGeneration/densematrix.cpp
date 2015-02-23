@@ -1,6 +1,16 @@
 #include "densematrix.h"
 
-DenseMatrix::DenseMatrix():ptr(nullptr){}
+DenseMatrix::DenseMatrix():ptr(nullptr), x(nullptr){}
+
+DenseMatrix::~DenseMatrix()
+{
+  if( ptr != nullptr ) {
+    // FIXME, memory issue.
+    //cholmod_free_dense(&ptr, global::cm);
+    ptr = nullptr;
+    x = nullptr;
+  }
+}
 
 DenseMatrix::DenseMatrix(int m, int n)
 {
@@ -13,10 +23,19 @@ DenseMatrix::DenseMatrix(const DenseMatrix &other){
   resetPointers();
 }
 
-DenseMatrix::DenseMatrix(DenseMatrix &&other){
+DenseMatrix::DenseMatrix(DenseMatrix &&other):ptr(nullptr){
   ptr = other.ptr;
   resetPointers();
   other.ptr = nullptr;
+}
+
+DenseMatrix &DenseMatrix::operator=(const DenseMatrix &other) {
+  if( this != &other ) {
+    if( ptr != nullptr ) cholmod_free_dense(&ptr, global::cm);
+    ptr = cholmod_copy_dense(other.ptr, global::cm);
+    resetPointers();
+  }
+  return *this;
 }
 
 DenseMatrix &DenseMatrix::operator=(DenseMatrix &&other) {
@@ -24,15 +43,6 @@ DenseMatrix &DenseMatrix::operator=(DenseMatrix &&other) {
     ptr = other.ptr;
     resetPointers();
     other.ptr = nullptr;
-  }
-  return *this;
-}
-
-DenseMatrix &DenseMatrix::operator=(const DenseMatrix &other) {
-  if( this != &other ) {
-    cholmod_free_dense(&ptr, global::cm);
-    ptr = cholmod_copy_dense(other.ptr, global::cm);
-    resetPointers();
   }
   return *this;
 }
@@ -50,13 +60,13 @@ DenseMatrix DenseMatrix::random(int m, int n) {
 }
 
 void DenseMatrix::resize(int m, int n) {
-  cholmod_free_dense(&ptr, global::cm);
+  if( ptr != nullptr ) cholmod_free_dense(&ptr, global::cm);
   ptr = cholmod_allocate_dense(m, n, m, CHOLMOD_REAL, global::cm);
   resetPointers();
 }
 
 void DenseMatrix::resetPointers() {
-  x = (double*) (ptr->x);
+  if( ptr != nullptr ) x = (double*) (ptr->x);
 }
 
 DenseMatrix &DenseMatrix::operator*=(double s) {

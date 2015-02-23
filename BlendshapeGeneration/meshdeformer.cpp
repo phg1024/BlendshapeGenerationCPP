@@ -2,6 +2,7 @@
 #include "Geometry/geometryutils.hpp"
 #include "densematrix.h"
 #include "sparsematrix.h"
+#include "utils.h"
 
 MeshDeformer::MeshDeformer()
 {
@@ -79,7 +80,7 @@ BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const PointCloud &lm_
 
     int offset_i = i * 3;
     // set the vertex's terms
-    auto Vi = makeVMatrix(V(offset_i), V(offset_i+1), V(offset_i+2));
+    DenseMatrix Vi = makeVMatrix(V(offset_i), V(offset_i+1), V(offset_i+2));
     // copy to A[i]
     for (int c = 0; c < 7; ++c) {
       for (int r = 0; r < 3; ++r) {
@@ -90,7 +91,7 @@ BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const PointCloud &lm_
     int roffset = 3;
     for (auto j : Ni) {
       int offset_j = j * 3;
-      auto Vj = makeVMatrix(V(offset_j), V(offset_j + 1), V(offset_j + 2));
+      DenseMatrix Vj = makeVMatrix(V(offset_j), V(offset_j + 1), V(offset_j + 2));
 
       for (int c = 0; c < 7; ++c) {
         for (int r = 0; r < 3; ++r) {
@@ -120,10 +121,10 @@ BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const PointCloud &lm_
   vector<DenseMatrix> Tm(nverts);
   for (int i = 0; i < nverts; ++i) {
     int offset_i = i * 3;
-    auto Di = makeDMatrix(delta(offset_i), delta(offset_i+1), delta(offset_i+2));
+    DenseMatrix Di = makeDMatrix(delta(offset_i), delta(offset_i+1), delta(offset_i+2));
     auto& Ai = A[i];
-    auto At = A[i].transposed();
-    auto invAtAi = (At * Ai).inv();
+    DenseMatrix At = Ai.transposed();
+    DenseMatrix invAtAi = (At * Ai).inv();
     Tm[i] = Di * (invAtAi * At);
   }
 
@@ -168,6 +169,10 @@ BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const PointCloud &lm_
   cout << "points sampled." << endl;
 #else
   PointCloud P = T.samplePoints(2, -0.1);
+  int npoints = P.points.nrow;
+  ofstream fP("P.txt");
+  fP << P;
+  fP.close();
 #endif
 
   // the number of matrix elements in distortion term
@@ -211,7 +216,7 @@ BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const PointCloud &lm_
       Efit += Ei;
     }
     Efit /= npoints;
-    cout << "Efit = " << Efit << endl;
+    cout << RED << "Efit = " << Efit << RESET << endl;
 
     // count the total number of terms
     int nrows = 0;
@@ -426,6 +431,17 @@ BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const PointCloud &lm_
 
     // update the vertices of D using the x vector
     memcpy(D.verts.data.get(), x->x, sizeof(double)*nverts*3);
+
+    // release memory
+
+    cholmod_free_sparse(&Ms, global::cm);
+    cholmod_free_sparse(&Mt, global::cm);
+    cholmod_free_sparse(&MtM, global::cm);
+    cholmod_free_dense(&bs, global::cm);
+    cholmod_free_dense(&Mtb, global::cm);
+    cholmod_free_factor(&L, global::cm);
+    cholmod_free_dense(&x, global::cm);
+
 
     // update weighting factors
     // increase w_icp

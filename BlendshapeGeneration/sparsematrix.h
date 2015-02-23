@@ -8,6 +8,7 @@
 class SparseMatrix {
 public:
     SparseMatrix(){}
+    ~SparseMatrix();
     SparseMatrix(int m, int n, int nzmax = 64);
     SparseMatrix(const SparseMatrix &other);
     SparseMatrix &operator=(const SparseMatrix&);

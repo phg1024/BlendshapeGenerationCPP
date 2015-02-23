@@ -3,6 +3,7 @@
 
 #include "densematrix.h"
 #include "densevector.h"
+#include "sparsematrix.h"
 #include "cereswrapper.h"
 
 class TestCases

@@ -11,7 +11,8 @@ HEADERS += blendshapegeneration.h \
     meshdeformer.h \
     pointcloud.h \
     basicmesh.h \
-    testcases.h
+    testcases.h \
+    utils.h
 SOURCES += blendshapegeneration.cpp \
            main.cpp \
     common.cpp \

@@ -13,6 +13,7 @@
 #include "cereswrapper.h"
 
 #include "Geometry/matrix.hpp"
+#include "utils.h"
 
 vector<int> loadLandmarks(const string &filename) {
   const int npts = 73;
@@ -54,6 +55,41 @@ void laplacianDeformation() {
   D.write("deformed" + to_string(objidx) + ".obj");
 }
 
+
+void deformationTransfer() {
+#ifdef __APPLE__
+  const string datapath = "/Users/phg/Data/FaceWarehouse_Data_0/";
+#endif
+
+#ifdef __linux__
+  const string datapath = "/home/phg/Data/FaceWarehouse_Data_0/";
+#endif
+
+  BasicMesh S0;
+  S0.load(datapath + "Tester_1/Blendshape/shape_0.obj");
+
+  BasicMesh T0;
+  T0.load(datapath + "Tester_106/Blendshape/shape_0.obj");
+
+  // use deformation transfer to create an initial set of blendshapes
+  MeshTransferer transferer;
+
+  transferer.setSource(S0); // set source and compute deformation gradient
+  transferer.setTarget(T0); // set target and compute deformation gradient
+
+  // find the stationary set of verteces
+  vector<int> stationary_indices = T0.filterVertices([=](double *v) {
+    return v[2] <= -0.45;
+  });
+  transferer.setStationaryVertices(stationary_indices);
+
+  BasicMesh S;
+  S.load(datapath + "Tester_1/Blendshape/shape_22.obj");
+
+  BasicMesh T = transferer.transfer(S);
+  T.write("transferred.obj");
+}
+
 Array1D<double> estimateWeights(const BasicMesh &S,
                                 const BasicMesh &B0,
                                 vector<Array2D<double>> &dB,
@@ -64,14 +100,6 @@ Array1D<double> estimateWeights(const BasicMesh &S,
   Array1D<double> w;
 
   return w;
-}
-
-PhGUtils::Matrix3x3d triangleGradient(const BasicMesh &m, int fidx) {
-  PhGUtils::Matrix3x3d G;
-
-
-
-  return G;
 }
 
 vector<Array2D<double>> refineBlendShapes(const vector<BasicMesh> &S,
@@ -123,11 +151,17 @@ void blendShapeGeneration() {
   }
 
   const bool synthesizeTrainingPoses = false;
+  vector<Array1D<double>> alpha_ref(nposes);
   if( synthesizeTrainingPoses ) {
     // estimate the blendshape weights from the input training poses, then use
     // the estimated weights to generate a new set of training poses
 
-    vector<Array1D<double>> alpha_ref(nposes);
+
+  }
+  else {
+    // fill alpha_ref with zeros
+
+
   }
 
   // create point clouds from S0
@@ -158,6 +192,7 @@ void blendShapeGeneration() {
   MeshTransferer transferer;
   transferer.setSource(A0); // set source and compute deformation gradient
   transferer.setTarget(B0); // set target and compute deformation gradient
+  transferer.setStationaryVertices(stationary_indices);
 
   for(int i=1;i<nshapes;++i) {
     B[i] = transferer.transfer(A[i]);
@@ -354,7 +389,10 @@ int main(int argc, char *argv[])
 #else
 
   //laplacianDeformation();
-  blendShapeGeneration();
+
+  //deformationTransfer();
+
+  //blendShapeGeneration();
 
   global::finalize();
   return 0;

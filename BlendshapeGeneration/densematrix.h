@@ -12,6 +12,7 @@
 class DenseMatrix {
 public:
   DenseMatrix();
+  ~DenseMatrix();
   DenseMatrix(int m, int n);
   DenseMatrix(const DenseMatrix &other);
   DenseMatrix(DenseMatrix &&other);
@@ -57,6 +58,8 @@ public:
   DenseMatrix transposed() const;
 
   DenseMatrix inv() const;
+
+  cholmod_dense *to_dense() { return ptr; }
 
   friend ostream& operator<<(ostream &os, const DenseMatrix &P);
 
