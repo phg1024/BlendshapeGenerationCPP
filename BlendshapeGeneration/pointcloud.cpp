@@ -35,3 +35,10 @@ PointCloud &PointCloud::operator=(PointCloud &&rhs)
   }
   return (*this);
 }
+
+void PointCloud::write(const string &filename)
+{
+  ofstream fout(filename);
+  fout << (*this) << endl;
+  fout.close();
+}

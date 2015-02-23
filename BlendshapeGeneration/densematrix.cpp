@@ -6,7 +6,7 @@ DenseMatrix::~DenseMatrix()
 {
   if( ptr != nullptr ) {
     // FIXME, memory issue.
-    //cholmod_free_dense(&ptr, global::cm);
+    cholmod_free_dense(&ptr, global::cm);
     ptr = nullptr;
     x = nullptr;
   }
@@ -88,7 +88,7 @@ DenseMatrix DenseMatrix::operator*(const DenseMatrix &rhs) {
   else {
     DenseMatrix res(ptr->nrow, rhs.ncol());
 
-#if 1
+#if 0
     int m = ptr->nrow, n = rhs.ptr->ncol, k = ptr->ncol;
 
     const double *A = (const double*)(ptr->x), *B = (const double*)(rhs.ptr->x);

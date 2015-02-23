@@ -12,6 +12,8 @@ struct PointCloud
   PointCloud& operator=(const PointCloud &rhs);
   PointCloud& operator=(PointCloud &&rhs);
 
+  void write(const string &filename);
+
   friend ostream& operator<<(ostream &os, const PointCloud &P);
   Array2D<double> points;
 };

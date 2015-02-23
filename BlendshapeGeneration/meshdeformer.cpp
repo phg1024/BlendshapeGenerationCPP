@@ -13,12 +13,12 @@ MeshDeformer::~MeshDeformer()
 {
 }
 
-BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const PointCloud &lm_points)
+BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const PointCloud &lm_points, int itmax)
 {
 #define DEFORMWITHMESH_VIA_DEFORMWITHPOINTS 1
 #if DEFORMWITHMESH_VIA_DEFORMWITHPOINTS
   PointCloud P = T.samplePoints(16, -0.1);
-  return deformWithPoints(P, lm_points);
+  return deformWithPoints(P, lm_points, itmax);
 #else
   cout << "deformation with mesh ..." << endl;
   int nverts = S.verts.nrow;
@@ -463,7 +463,7 @@ BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const PointCloud &lm_
 #endif
 }
 
-BasicMesh MeshDeformer::deformWithPoints(const PointCloud &P, const PointCloud &lm_points)
+BasicMesh MeshDeformer::deformWithPoints(const PointCloud &P, const PointCloud &lm_points, int itmax)
 {
   cout << "deformation with mesh ..." << endl;
   int nverts = S.verts.nrow;
@@ -574,8 +574,12 @@ BasicMesh MeshDeformer::deformWithPoints(const PointCloud &P, const PointCloud &
     DenseMatrix Di = makeDMatrix(delta(offset_i), delta(offset_i+1), delta(offset_i+2));
     auto& Ai = A[i];
     DenseMatrix At = Ai.transposed();
-    DenseMatrix invAtAi = (At * Ai).inv();
+    DenseMatrix AtAi = At * Ai;
+    //cout << AtAi << endl;
+    DenseMatrix invAtAi = AtAi.inv();
+    //cout << invAtAi << endl;
     Tm[i] = Di * (invAtAi * At);
+    //cout << Tm[i] << endl;
   }
 
   BasicMesh D = S.clone(); // make a copy of the source mesh
@@ -593,7 +597,6 @@ BasicMesh MeshDeformer::deformWithPoints(const PointCloud &P, const PointCloud &
   ndistortion *= 9;
 
   // main deformation loop
-  const int itmax = 10;
   int iters = 0;
 
   double ratio_data2icp = 10.0*lm_points.points.nrow / (double) S.verts.nrow;
@@ -752,6 +755,8 @@ BasicMesh MeshDeformer::deformWithPoints(const PointCloud &P, const PointCloud &
       auto& Ni = N[i];
       double wi = w_dist;
 
+      //cout << Ti << endl;
+
       int istart = i * 3;
       // deformation part
       //M.append(roffset+istart+0, istart+0, wi);
@@ -801,9 +806,11 @@ BasicMesh MeshDeformer::deformWithPoints(const PointCloud &P, const PointCloud &
     // compute M' * M
     cout << "computing M'*M..." << endl;
 
-    ofstream mfout("M.txt");
-    mfout << M << endl;
-    mfout.close();
+
+//    ofstream mfout("M.txt");
+//    mfout << M << endl;
+//    mfout.close();
+
 
     PhGUtils::Timer tsolve;
     tsolve.tic();
@@ -835,15 +842,17 @@ BasicMesh MeshDeformer::deformWithPoints(const PointCloud &P, const PointCloud &
     tsolve.toc("solving linear equations");
 
     cholmod_print_dense(x, "x", global::cm);
+
+    /*
     ofstream fout("x.txt");
     for(int xidx=0;xidx<x->nrow;++xidx) fout << ((double*)x->x) [xidx] << endl;
     fout.close();
+    */
 
     // update the vertices of D using the x vector
     memcpy(D.verts.data.get(), x->x, sizeof(double)*nverts*3);
 
     // release memory
-
     cholmod_free_sparse(&Ms, global::cm);
     cholmod_free_sparse(&Mt, global::cm);
     cholmod_free_sparse(&MtM, global::cm);
@@ -851,7 +860,6 @@ BasicMesh MeshDeformer::deformWithPoints(const PointCloud &P, const PointCloud &
     cholmod_free_dense(&Mtb, global::cm);
     cholmod_free_factor(&L, global::cm);
     cholmod_free_dense(&x, global::cm);
-
 
     // update weighting factors
     // increase w_icp

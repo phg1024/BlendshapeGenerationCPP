@@ -3,9 +3,9 @@
 
 SparseMatrix::~SparseMatrix()
 {
-//  if( ptr != nullptr ) {
-//    cholmod_free_triplet(&ptr, global::cm);
-//  }
+  if( ptr != nullptr ) {
+    cholmod_free_triplet(&ptr, global::cm);
+  }
 }
 
 SparseMatrix::SparseMatrix(int m, int n, int nzmax)

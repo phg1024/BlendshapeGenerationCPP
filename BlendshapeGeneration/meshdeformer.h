@@ -20,8 +20,8 @@ public:
 
   void setSource(const BasicMesh &src) { S = src; }
   void setLandmarks(const vector<int> &lms) { landmarks = lms; }
-  BasicMesh deformWithMesh(const BasicMesh &T, const PointCloud &lm_points);
-  BasicMesh deformWithPoints(const PointCloud &P, const PointCloud &lm_points);
+  BasicMesh deformWithMesh(const BasicMesh &T, const PointCloud &lm_points, int itmax = 10);
+  BasicMesh deformWithPoints(const PointCloud &P, const PointCloud &lm_points, int itmax = 10);
 
 protected:
   vector<ICPCorrespondence> findClosestPoints_tree(const PointCloud &P, const BasicMesh &mesh);

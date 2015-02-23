@@ -50,7 +50,7 @@ void laplacianDeformation() {
 
   PointCloud lm_points;
   lm_points.points = T.verts.row(landmarks);
-  BasicMesh D = deformer.deformWithMesh(T, lm_points);
+  BasicMesh D = deformer.deformWithMesh(T, lm_points, 5);
 
   D.write("deformed" + to_string(objidx) + ".obj");
 }
@@ -156,7 +156,7 @@ Array1D<double> estimateWeights(const BasicMesh &S,
   return w;
 }
 
-vector<Array2D<double>> refineBlendShapes(const vector<BasicMesh> &S,
+vector<BasicMesh> refineBlendShapes(const vector<BasicMesh> &S,
                                           const vector<Array2D<double>> &Sgrad,
                                           const vector<BasicMesh> &B,
                                           const vector<Array1D<double>> &alpha,
@@ -164,9 +164,87 @@ vector<Array2D<double>> refineBlendShapes(const vector<BasicMesh> &S,
                                           const Array2D<double> prior,
                                           const Array2D<double> w_prior,
                                           const vector<int> stationary_indices) {
-  vector<Array2D<double>> B_new;
+  const BasicMesh &B0 = B[0];
 
-  throw "Not implemented yet.";
+  int nfaces = B0.faces.nrow;
+  int nverts = B0.verts.nrow;
+
+  int nposes = S.size();
+  int nshapes = B.size() - 1;
+
+  // compute the deformation gradients for B0
+  Array2D<double> B0grad(nfaces, 9);
+  Array1D<double> DB(nfaces);
+  for(int i=0;i<nfaces;++i) {
+    auto GD = triangleGradient2(B0, i);
+    auto B0i_ptr = B0grad.rowptr(i);
+    for(int k=0;k<9;++k) B0i_ptr[k] = GD.first(k);
+    DB(i) = GD.second;
+  }
+
+  int nrows = nposes + nshapes;
+  int ncols = nshapes;
+  DenseMatrix A(nrows, ncols);
+  // the upper part of A is always the alpha matrix
+  for(int i=0;i<nposes;++i) {
+    for(int j=0;j<ncols;++j) {
+      A(i, j) = alpha[i](j);
+    }
+  }
+
+  cout << BLUE << "computing perface gradients." << RESET << endl;
+  vector<DenseMatrix> M(nfaces);
+  for(int i=0;i<nfaces;++i) {
+    if( i % 5000 == 0 ) cout << RED << i << " faces processed." << RESET << endl;
+
+    DenseMatrix b(nrows, 9);
+
+    auto B0i_ptr = B0grad.rowptr(i);
+    // upper part of b
+    for(int j=0;j<nposes;++j) {
+      // the gradients of the j-th pose
+      auto Sgrad_j = Sgrad[j];
+      // the pointer to the i-th face
+      auto Sgrad_ij = Sgrad_j.rowptr(i);
+
+      for(int k=0;k<9;++k) b(j, k) = Sgrad_ij[k] - B0i_ptr[k];
+    }
+
+    // lower part of A
+    for(int j=0;j<nshapes;++j) {
+      A(j+nposes, j) = beta * w_prior(j, i);
+    }
+
+    // the lower part of b
+    int ioffset = i*9;
+    for(int j=0;j<nshapes;++j) {
+      for(int k=0;k<9;++k) b(j+nposes, k) = w_prior(j, i) * prior(j, ioffset+k);
+    }
+
+    // solve the equation A'A\A'b
+    DenseMatrix At = A.transposed();
+    DenseMatrix AtA = At * A;
+    DenseMatrix Atb = At * b;
+    M[i] = (AtA.inv()) * Atb;     // nshapes x 9 matrix
+  }
+
+  // reconstruct the blendshapes now
+  cout << BLUE << "reconstructing blendshapes." << RESET << endl;
+  MeshTransferer transferer;
+  transferer.setSource(B0);
+  transferer.setTarget(B0);
+  transferer.setStationaryVertices(stationary_indices);
+
+  vector<BasicMesh> B_new(nshapes);
+  for(int i=0;i<nshapes;++i) {
+    cout << GREEN << "reconstructing blendshapes " << i << RESET << endl;
+    vector<PhGUtils::Matrix3x3d> Bgrad_i(nfaces);
+    for(int j=0;j<nfaces;++j) {
+      auto &Mj = M[j];
+      for(int k=0;k<9;++k) Bgrad_i[j](k) = Mj(i, k);
+    }
+    B_new[i] = transferer.transfer(Bgrad_i);
+  }
 
   return B_new;
 }
@@ -244,7 +322,7 @@ void blendShapeGeneration() {
       Sgen[i] = Ti;
     }
     S0 = Sgen;
-    return;
+    cout << "input training set generated." << endl;
   }
   else {
     // fill alpha_ref with zeros
@@ -255,36 +333,46 @@ void blendShapeGeneration() {
   vector<PointCloud> P(nposes);
   for(int i=0;i<nposes;++i) {
     P[i] = S0[i].samplePoints(4, -0.10);
+    P[i].write("P_" + to_string(i) + ".txt");
   }
 
   vector<BasicMesh> S(nposes);  // meshes reconstructed from point clouds
   // use Laplacian deformation to reconstruct a set of meshes from the sampled
   // point clouds
+  MeshDeformer deformer;
+  deformer.setSource(B0);
+  deformer.setLandmarks(landmarks);
   for(int i=0;i<nposes;++i) {
-    MeshDeformer deformer;
-    deformer.setSource(S0[i]);
-    deformer.setLandmarks(landmarks);
     PointCloud lm_points;
     lm_points.points = S0[i].verts.row(landmarks);
-    S[i] = deformer.deformWithPoints(P[i], lm_points);
+    S[i] = deformer.deformWithPoints(P[i], lm_points, 2);
+    S[i].write("Sinit_" + to_string(i) + ".obj");
   }
   auto S_init = S;
+  cout << "initial fitted meshes computed." << endl;
 
   // find the stationary set of verteces
   vector<int> stationary_indices = B0.filterVertices([=](double *v) {
     return v[2] <= -0.45;
   });
+  cout << "stationary vertices = " << stationary_indices.size() << endl;
 
+  cout << BLUE << "creating initial set of blendshapes using deformation transfer." << RESET << endl;
   // use deformation transfer to create an initial set of blendshapes
   MeshTransferer transferer;
   transferer.setSource(A0); // set source and compute deformation gradient
   transferer.setTarget(B0); // set target and compute deformation gradient
   transferer.setStationaryVertices(stationary_indices);
 
-  for(int i=1;i<nshapes;++i) {
+  for(int i=1;i<=nshapes;++i) {
+    cout << GREEN << "creating shape " << i << RESET << endl;
     B[i] = transferer.transfer(A[i]);
+    B[i].write("Binit_" + to_string(i) + ".obj");
   }
   auto B_init = B;
+  cout << BLUE << "initial set of blendshapes created." << RESET << endl;
+
+  return ;
 
   // compute deformation gradient prior from the template mesh
   int nfaces = A0.faces.nrow;
@@ -339,7 +427,7 @@ void blendShapeGeneration() {
   vector<Array1D<double>> alpha(nposes);
   for(int i=0;i<nposes;++i) {
     alpha[i] = estimateWeights(S[i], B0, dB,
-                               Array1D<double>::zeros(nshapes),
+                               Array1D<double>::random(nshapes),
                                Array1D<double>::zeros(nshapes),
                                0.0, 5);
   }
@@ -374,7 +462,7 @@ void blendShapeGeneration() {
   double gamma_max = 0.01, gamma_min = 0.01;
   double eta_max = 10.0, eta_min = 1.0;
   int iters = 0;
-  const int maxIters = 10;
+  const int maxIters = 1;
   DenseMatrix B_error = DenseMatrix::zeros(maxIters, nshapes);
   DenseMatrix S_error = DenseMatrix::zeros(maxIters, nposes);
   while( !converged && iters < maxIters ) {
@@ -387,13 +475,13 @@ void blendShapeGeneration() {
     double gamma = gamma_max + iters/maxIters*(gamma_min-gamma_max);
     double eta = eta_max + iters/maxIters*(eta_min-eta_max);
 
-    // B_new is a set of point clouds
+    // B_new is a set of new blendshapes
     auto B_new = refineBlendShapes(S, Sgrad, B, alpha, beta, gamma, prior, w_prior, stationary_indices);
 
     //B_norm = zeros(1, nshapes);
     for(int i=0;i<nshapes;++i) {
       //B_norm(i) = norm(B[i+1].vertices-B_new[i], 2);
-      B[i+1].verts = B_new[i];
+      B[i+1].verts = B_new[i].verts;
       //B_error(iters, i) = sqrt(max(sum((B{i+1}.vertices-B_ref{i+1}.vertices).^2, 2)));
       //B{i+1} = alignMesh(B{i+1}, B{1}, stationary_indices);
     }
@@ -439,7 +527,7 @@ void blendShapeGeneration() {
       deformer.setLandmarks(landmarks);
       PointCloud lm_points;
       lm_points.points = S0[i].verts.row(landmarks);
-      S[i] = deformer.deformWithPoints(P[i], lm_points);
+      S[i] = deformer.deformWithPoints(P[i], lm_points, 2);
     }
 
     // compute deformation gradients for S
@@ -452,6 +540,11 @@ void blendShapeGeneration() {
         for(int k=0;k<9;++k) Sij_ptr[k] = Sij(k);
       }
     }
+  }
+
+  // write out the blendshapes
+  for(int i=0;i<nshapes+1;++i) {
+    B[i].write("B_"+to_string(i)+".obj");
   }
 }
 
@@ -475,11 +568,11 @@ int main(int argc, char *argv[])
   return 0;
 #else
 
-  //  laplacianDeformation();
-  //  return 0;
+//  deformationTransfer();
+//  return 0;
 
-  //  deformationTransfer();
-  //  return 0;
+//  laplacianDeformation();
+//  return 0;
 
   blendShapeGeneration();
 
