@@ -20,6 +20,5 @@ struct CostFunctor {
    }
 };
 
-
 #endif // CERESWRAPPER_H
 

@@ -57,9 +57,20 @@ struct Array1D {
   T& operator()(int idx) { return data.get()[idx]; }
   const T& operator()(int idx) const { return data.get()[idx]; }
 
+  template <typename AT>
+  friend ostream& operator<<(ostream &os, const Array1D<AT> &A);
+
   int nrow;
   shared_ptr<T> data;
 };
+
+template <typename AT>
+ostream &operator<<(ostream &os, const Array1D<AT> &A)
+{
+  for(int i=0;i<A.nrow;++i) os << A(i) << ' ';
+  return os;
+}
+
 
 template <typename T>
 struct Array2D {
@@ -192,4 +203,3 @@ Array2D<T> operator*(T lhs, const Array2D<T> &rhs) {
 }
 
 #endif // NDARRAY_HPP
-

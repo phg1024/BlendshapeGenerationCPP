@@ -90,16 +90,69 @@ void deformationTransfer() {
   T.write("transferred.obj");
 }
 
+struct PointResidual {
+  PointResidual(double x, double y, double z, int idx, const vector<Array2D<double>> &dB)
+    : mx(x), my(y), mz(z), vidx(idx), dB(dB) {}
+
+  template <typename T>
+  bool operator()(const T* const alpha, T* residual) const {
+    T p[3];
+    p[0] = T(0); p[1] = T(0); p[2] = T(0);
+    int nshapes = dB.size();
+    // compute
+    for(int i=0;i<nshapes;++i) {
+      double *dBi_ptr = dB[i].rowptr(vidx);
+      p[0] += T(dBi_ptr[0]) * alpha[i];
+      p[1] += T(dBi_ptr[1]) * alpha[i];
+      p[2] += T(dBi_ptr[2]) * alpha[i];
+    }
+    residual[0] = T(mx) - p[0]; residual[1] = T(my) - p[1]; residual[2] = T(mz) - p[2];
+    return true;
+  }
+
+private:
+  const double mx, my, mz;
+  const int vidx;
+  const vector<Array2D<double>> &dB;
+};
+
 Array1D<double> estimateWeights(const BasicMesh &S,
                                 const BasicMesh &B0,
-                                vector<Array2D<double>> &dB,
+                                const vector<Array2D<double>> &dB,
                                 const Array1D<double> &w0,  // init value
                                 const Array1D<double> &wp,  // prior
                                 double w_prior,
                                 int itmax) {
-  Array1D<double> w;
+  Array1D<double> w = w0;
 
-  throw "Not implemented yet.";
+  Problem problem;
+
+  // add all constraints
+  int nverts = S.verts.nrow;
+  for(int i=0;i<nverts;++i) {
+    double *vS = S.verts.rowptr(i);
+    double *vB0 = B0.verts.rowptr(i);
+    double dx = vS[0] - vB0[0];
+    double dy = vS[1] - vB0[1];
+    double dz = vS[2] - vB0[2];
+
+    CostFunction *costfun = new AutoDiffCostFunction<PointResidual, 3, 46>(
+          new PointResidual(dx, dy, dz, i, dB));
+    problem.AddResidualBlock(costfun, NULL, w.data.get());
+  }
+
+  cout << "w0 = " << endl;
+  cout << w << endl;
+  // set the solver options
+  Solver::Options options;
+  options.linear_solver_type = ceres::DENSE_QR;
+  options.minimizer_progress_to_stdout = true;
+
+  Solver::Summary summary;
+  Solve(options, &problem, &summary);
+
+  cout << summary.BriefReport() << endl;
+
   return w;
 }
 
@@ -153,7 +206,7 @@ void blendShapeGeneration() {
     S0[i].load(S_path + "pose_" + to_string(i) + ".obj");
   }
 
-  const bool synthesizeTrainingPoses = false;
+  const bool synthesizeTrainingPoses = true;
   vector<Array1D<double>> alpha_ref(nposes);
   if( synthesizeTrainingPoses ) {
     // estimate the blendshape weights from the input training poses, then use
@@ -168,9 +221,10 @@ void blendShapeGeneration() {
     // estimate the weights of the training poses using the ground truth blendshapes
     for(int i=0;i<nposes;++i) {
       alpha_ref[i] = estimateWeights(S0[i], B0, dB_ref,
-                                 Array1D<double>::random(nshapes),
-                                 Array1D<double>::zeros(nshapes),
-                                 0.0, 5);
+                                     Array1D<double>::random(nshapes),
+                                     Array1D<double>::zeros(nshapes),
+                                     0.0, 5);
+      cout << alpha_ref[i] << endl;
     }
 
     // use the reference weights to build a set of training poses
@@ -179,16 +233,18 @@ void blendShapeGeneration() {
     for(int i=0;i<nposes;++i) {
       // make a copy of B0
       auto Ti = B0;
-        for(int j=0;j<nshapes;++j) {
-            Ti.verts += alpha_ref[i](j) * dB_ref[j];
-        }
-        //Ti = alignMesh(Ti, S0{i});
-        //S_error(iters, i) = sqrt(max(sum((Ti.vertices-S0{i}.vertices).^2, 2)));
+      for(int j=0;j<nshapes;++j) {
+        Ti.verts += alpha_ref[i](j) * dB_ref[j];
+      }
+      Ti.write("Sgen_"+to_string(i)+".obj");
+      //Ti = alignMesh(Ti, S0{i});
+      //S_error(iters, i) = sqrt(max(sum((Ti.vertices-S0{i}.vertices).^2, 2)));
 
-        // update the reconstructed mesh
-        Sgen[i] = Ti;
+      // update the reconstructed mesh
+      Sgen[i] = Ti;
     }
     S0 = Sgen;
+    return;
   }
   else {
     // fill alpha_ref with zeros
@@ -322,80 +378,80 @@ void blendShapeGeneration() {
   DenseMatrix B_error = DenseMatrix::zeros(maxIters, nshapes);
   DenseMatrix S_error = DenseMatrix::zeros(maxIters, nposes);
   while( !converged && iters < maxIters ) {
-      cout << "iteration " << iters << " ..." << endl;
-      converged = true;
-      ++iters;
+    cout << "iteration " << iters << " ..." << endl;
+    converged = true;
+    ++iters;
 
-      // refine blendshapes
-      double beta = sqrt(iters/maxIters) * (beta_min - beta_max) + beta_max;
-      double gamma = gamma_max + iters/maxIters*(gamma_min-gamma_max);
-      double eta = eta_max + iters/maxIters*(eta_min-eta_max);
+    // refine blendshapes
+    double beta = sqrt(iters/maxIters) * (beta_min - beta_max) + beta_max;
+    double gamma = gamma_max + iters/maxIters*(gamma_min-gamma_max);
+    double eta = eta_max + iters/maxIters*(eta_min-eta_max);
 
-      // B_new is a set of point clouds
-      auto B_new = refineBlendShapes(S, Sgrad, B, alpha, beta, gamma, prior, w_prior, stationary_indices);
+    // B_new is a set of point clouds
+    auto B_new = refineBlendShapes(S, Sgrad, B, alpha, beta, gamma, prior, w_prior, stationary_indices);
 
-      //B_norm = zeros(1, nshapes);
-      for(int i=0;i<nshapes;++i) {
-          //B_norm(i) = norm(B[i+1].vertices-B_new[i], 2);
-          B[i+1].verts = B_new[i];
-          //B_error(iters, i) = sqrt(max(sum((B{i+1}.vertices-B_ref{i+1}.vertices).^2, 2)));
-          //B{i+1} = alignMesh(B{i+1}, B{1}, stationary_indices);
+    //B_norm = zeros(1, nshapes);
+    for(int i=0;i<nshapes;++i) {
+      //B_norm(i) = norm(B[i+1].vertices-B_new[i], 2);
+      B[i+1].verts = B_new[i];
+      //B_error(iters, i) = sqrt(max(sum((B{i+1}.vertices-B_ref{i+1}.vertices).^2, 2)));
+      //B{i+1} = alignMesh(B{i+1}, B{1}, stationary_indices);
+    }
+    //fprintf('max(B_error) = %.6f\n', max(B_error(iters, :)));
+    //converged = converged & (max(B_norm) < B_THRES);
+
+    // update delta shapes
+    for(int i=0;i<nshapes;++i) {
+      dB[i] = B[i+1].verts - B0.verts;
+    }
+
+    // update weights
+    vector<Array1D<double>> alpha_new(nposes);
+    for(int i=0;i<nposes;++i) {
+      alpha_new[i] = estimateWeights(S[i], B0, dB, alpha[i], alpha_ref[i], eta, 2);
+    }
+
+    //alpha_norm = norm(cell2mat(alpha) - cell2mat(alpha_new));
+    //disp(alpha_norm);
+    alpha = alpha_new;
+    //converged = converged & (alpha_norm < ALPHA_THRES);
+
+    for(int i=0;i<nposes;++i) {
+      // make a copy of B0
+      auto Ti = B0;
+      for(int j=0;j<nshapes;++j) {
+        Ti.verts += alpha[i](j) * dB[j];
       }
-      //fprintf('max(B_error) = %.6f\n', max(B_error(iters, :)));
-      //converged = converged & (max(B_norm) < B_THRES);
+      //Ti = alignMesh(Ti, S0{i});
+      //S_error(iters, i) = sqrt(max(sum((Ti.vertices-S0{i}.vertices).^2, 2)));
 
-      // update delta shapes
-      for(int i=0;i<nshapes;++i) {
-        dB[i] = B[i+1].verts - B0.verts;
+      // update the reconstructed mesh
+      S[i] = Ti;
+    }
+    //fprintf('Emax = %.6f\tEmean = %.6f\n', max(S_error(iters,:)), mean(S_error(iters,:)));
+
+
+    // The reconstructed mesh are updated using the new set of blendshape
+    // weights, need to use laplacian deformation to refine them again
+    for(int i=0;i<nposes;++i) {
+      MeshDeformer deformer;
+      deformer.setSource(S[i]);
+      deformer.setLandmarks(landmarks);
+      PointCloud lm_points;
+      lm_points.points = S0[i].verts.row(landmarks);
+      S[i] = deformer.deformWithPoints(P[i], lm_points);
+    }
+
+    // compute deformation gradients for S
+    for(int i=0;i<nposes;++i) {
+      Sgrad[i] = Array2D<double>::zeros(nfaces, 9);
+      for(int j=0;j<nfaces;++j) {
+        // assign the reshaped gradient to the j-th row of Sgrad[i]
+        auto Sij = triangleGradient(S[i], j);
+        auto Sij_ptr = Sgrad[i].rowptr(j);
+        for(int k=0;k<9;++k) Sij_ptr[k] = Sij(k);
       }
-
-      // update weights
-      vector<Array1D<double>> alpha_new(nposes);
-      for(int i=0;i<nposes;++i) {
-        alpha_new[i] = estimateWeights(S[i], B0, dB, alpha[i], alpha_ref[i], eta, 2);
-      }
-
-      //alpha_norm = norm(cell2mat(alpha) - cell2mat(alpha_new));
-      //disp(alpha_norm);
-      alpha = alpha_new;
-      //converged = converged & (alpha_norm < ALPHA_THRES);
-
-      for(int i=0;i<nposes;++i) {
-        // make a copy of B0
-        auto Ti = B0;
-          for(int j=0;j<nshapes;++j) {
-              Ti.verts += alpha[i](j) * dB[j];
-          }
-          //Ti = alignMesh(Ti, S0{i});
-          //S_error(iters, i) = sqrt(max(sum((Ti.vertices-S0{i}.vertices).^2, 2)));
-
-          // update the reconstructed mesh
-          S[i] = Ti;
-      }
-      //fprintf('Emax = %.6f\tEmean = %.6f\n', max(S_error(iters,:)), mean(S_error(iters,:)));
-
-
-      // The reconstructed mesh are updated using the new set of blendshape
-      // weights, need to use laplacian deformation to refine them again
-      for(int i=0;i<nposes;++i) {
-        MeshDeformer deformer;
-        deformer.setSource(S[i]);
-        deformer.setLandmarks(landmarks);
-        PointCloud lm_points;
-        lm_points.points = S0[i].verts.row(landmarks);
-        S[i] = deformer.deformWithPoints(P[i], lm_points);
-      }
-
-      // compute deformation gradients for S
-      for(int i=0;i<nposes;++i) {
-        Sgrad[i] = Array2D<double>::zeros(nfaces, 9);
-        for(int j=0;j<nfaces;++j) {
-          // assign the reshaped gradient to the j-th row of Sgrad[i]
-          auto Sij = triangleGradient(S[i], j);
-          auto Sij_ptr = Sgrad[i].rowptr(j);
-          for(int k=0;k<9;++k) Sij_ptr[k] = Sij(k);
-        }
-      }
+    }
   }
 }
 
@@ -419,11 +475,11 @@ int main(int argc, char *argv[])
   return 0;
 #else
 
-//  laplacianDeformation();
-//  return 0;
+  //  laplacianDeformation();
+  //  return 0;
 
-//  deformationTransfer();
-//  return 0;
+  //  deformationTransfer();
+  //  return 0;
 
   blendShapeGeneration();
 
