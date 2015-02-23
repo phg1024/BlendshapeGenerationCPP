@@ -3,12 +3,16 @@
 #include "blendshapegeneration.h"
 #include <QtWidgets/QApplication>
 
+#include "testcases.h"
+
 #include "densematrix.h"
 #include "densevector.h"
 #include "basicmesh.h"
 #include "meshdeformer.h"
 #include "meshtransferer.h"
 #include "cereswrapper.h"
+
+#include "Geometry/matrix.hpp"
 
 vector<int> loadLandmarks(const string &filename) {
   const int npts = 73;
@@ -19,75 +23,6 @@ vector<int> loadLandmarks(const string &filename) {
     cout << v[i] << endl;
   }
   return v;
-}
-
-void testMatrix() {
-  DenseMatrix A = DenseMatrix::random(5, 5);
-  cout << "A = \n" << A << endl;
-  auto B = A.inv();
-  cout << "B = \n" << B << endl;
-  cout << "Bt = \n" << B.transposed() << endl;
-  cout << "A*B = \n" << A * B << endl;
-  cout << "B*A = \n" << B * A << endl;
-}
-
-#if 1
-void testSparseMatrix() {
-  /*
-  2 -1 0 0 0
-  -1 2 -1 0 0
-  0 -1 2 -1 0
-  0 0 -1 2 -1
-  0 0 0 -1 2
-  */
-  SparseMatrix M(5, 5, 13);
-  M.append(0, 0, 2); M.append(0, 1, -1);
-  M.append(1, 0, -1); M.append(1, 1, 2); M.append(1, 2, -1);
-  M.append(2, 1, -1); M.append(2, 2, 2); M.append(2, 3, -1);
-  M.append(3, 2, -1); M.append(3, 3, 2); M.append(3, 4, -1);
-  M.append(4, 3, -1); M.append(4, 4, 2);
-  M.append(2, 1, 2);
-
-  auto MtM = M.selfProduct();
-  cholmod_print_sparse(MtM, "MtM", global::cm);
-
-  DenseVector b(5);
-  for(int i=0;i<5;++i) b(i) = 1.0;
-
-  auto x = M.solve(b, true);
-  for (int i = 0; i < x.length(); ++i) cout << x(i) << ' ';
-  cout << endl;
-  DenseVector b1 = M * x;
-  for (int i = 0; i < b1.length(); ++i) cout << b1(i) << ' ';
-  cout << endl;
-}
-#endif
-
-void testCeres() {
-
-  // The variable to solve for with its initial value.
-  double initial_x = 5.0;
-  double x = initial_x;
-
-  // Build the problem.
-  Problem problem;
-
-  // Set up the only cost function (also known as residual). This uses
-  // auto-differentiation to obtain the derivative (jacobian).
-  CostFunction* cost_function =
-      new AutoDiffCostFunction<CostFunctor, 1, 1>(new CostFunctor);
-  problem.AddResidualBlock(cost_function, NULL, &x);
-
-  // Run the solver!
-  Solver::Options options;
-  options.linear_solver_type = ceres::DENSE_QR;
-  options.minimizer_progress_to_stdout = true;
-  Solver::Summary summary;
-  Solve(options, &problem, &summary);
-
-  std::cout << summary.BriefReport() << "\n";
-  std::cout << "x : " << initial_x
-            << " -> " << x << "\n";
 }
 
 void laplacianDeformation() {
@@ -117,6 +52,39 @@ void laplacianDeformation() {
   BasicMesh D = deformer.deformWithMesh(T, lm_points);
 
   D.write("deformed" + to_string(objidx) + ".obj");
+}
+
+Array1D<double> estimateWeights(const BasicMesh &S,
+                                const BasicMesh &B0,
+                                vector<Array2D<double>> &dB,
+                                const Array1D<double> &w0,  // init value
+                                const Array1D<double> &wp,  // prior
+                                double w_prior,
+                                int itmax) {
+  Array1D<double> w;
+
+  return w;
+}
+
+PhGUtils::Matrix3x3d triangleGradient(const BasicMesh &m, int fidx) {
+  PhGUtils::Matrix3x3d G;
+
+
+
+  return G;
+}
+
+vector<Array2D<double>> refineBlendShapes(const vector<BasicMesh> &S,
+                                          const vector<Array2D<double>> &Sgrad,
+                                          const vector<BasicMesh> &B,
+                                          const vector<Array1D<double>> &alpha,
+                                          double beta, double gamma,
+                                          const Array2D<double> prior,
+                                          const Array2D<double> w_prior,
+                                          const vector<int> stationary_indices) {
+  vector<Array2D<double>> B_new;
+
+  return B_new;
 }
 
 void blendShapeGeneration() {
@@ -158,12 +126,14 @@ void blendShapeGeneration() {
   if( synthesizeTrainingPoses ) {
     // estimate the blendshape weights from the input training poses, then use
     // the estimated weights to generate a new set of training poses
+
+    vector<Array1D<double>> alpha_ref(nposes);
   }
 
   // create point clouds from S0
   vector<PointCloud> P(nposes);
   for(int i=0;i<nposes;++i) {
-    P[i] = samplePointClouds(S0);
+    P[i] = S0[i].samplePoints(4, -0.10);
   }
 
   vector<BasicMesh> S(nposes);  // meshes reconstructed from point clouds
@@ -180,7 +150,9 @@ void blendShapeGeneration() {
   auto S_init = S;
 
   // find the stationary set of verteces
-  // stationary_indices = find(B{1}.vertices(:,3)<-0.45);
+  vector<int> stationary_indices = B0.filterVertices([=](double *v) {
+    return v[2] <= -0.45;
+  });
 
   // use deformation transfer to create an initial set of blendshapes
   MeshTransferer transferer;
@@ -193,10 +165,50 @@ void blendShapeGeneration() {
   auto B_init = B;
 
   // compute deformation gradient prior from the template mesh
+  int nfaces = A0.faces.nrow;
 
+  Array2D<double> MB0 = Array2D<double>::zeros(nfaces, 9);
+  Array2D<double> MA0 = Array2D<double>::zeros(nfaces, 9);
+
+  for(int j=0;j<nfaces;++j) {
+    auto MB0j = triangleGradient(B0, j);
+    auto MB0j_ptr = MB0.rowptr(j);
+    for(int k=0;k<9;++k) MB0j_ptr[k] = MB0j(k);
+    auto MA0j = triangleGradient(A0, j);
+    auto MA0j_ptr = MA0.rowptr(j);
+    for(int k=0;k<9;++k) MA0j_ptr[k] = MA0j(k);
+  }
+
+  double kappa = 0.1;
+  Array2D<double> prior = Array2D<double>::zeros(nshapes, 9*nfaces);
+  Array2D<double> w_prior = Array2D<double>::zeros(nshapes, nfaces);
+  for(int i=0;i<nshapes;++i) {
+    // prior for shape i
+    auto &Ai = A[i+1];
+    Array2D<double> Pi = Array2D<double>::zeros(nfaces, 9);
+    auto w_prior_i = w_prior.rowptr(i);
+    for(int j=0;j<nfaces;++j) {
+      auto MAij = triangleGradient(Ai, j);
+      auto MA0j_ptr = MA0.rowptr(j);
+      // create a 3x3 matrix from MA0j_ptr
+      auto MA0j = PhGUtils::Matrix3x3d(MA0j_ptr);
+      auto GA0Ai = MAij * (MA0j.inv());
+      auto MB0j_ptr = MB0.rowptr(j);
+      auto MB0j = PhGUtils::Matrix3x3d(MB0j_ptr);
+      auto Pij = GA0Ai * MB0j - MB0j;
+      double MAij_norm = (MAij-MA0j).norm();
+      w_prior_i[j] = (1+MAij_norm)/(kappa+MAij_norm);
+
+      auto Pij_ptr = Pi.rowptr(j);
+      for(int k=0;k<9;++k) Pij_ptr[k] = Pij(k);
+    }
+    auto prior_i = prior.rowptr(i);
+    // prior(i,:) = Pi;
+    memcpy(prior_i, Pi.data.get(), sizeof(double)*nfaces*9);
+  }
 
   // compute the delta shapes
-  vector<PointCloud> dB(nshapes);
+  vector<Array2D<double>> dB(nshapes);
   for(int i=0;i<nshapes;++i) {
     dB[i] = B[i+1].verts - B0.verts;
   }
@@ -204,7 +216,10 @@ void blendShapeGeneration() {
   // estimate initial set of blendshape weights
   vector<Array1D<double>> alpha(nposes);
   for(int i=0;i<nposes;++i) {
-    alpha[i] = estimateWeights(S, B0, dB, Array1D::zeros(nshapes), 0.0, 5, true);
+    alpha[i] = estimateWeights(S[i], B0, dB,
+                               Array1D<double>::zeros(nshapes),
+                               Array1D<double>::zeros(nshapes),
+                               0.0, 5);
   }
   auto alpha_init = alpha;
 
@@ -218,15 +233,14 @@ void blendShapeGeneration() {
   // main blendshape refinement loop
 
   // compute deformation gradients for S
-  vector<DenseMatrix> Sgrad(nfaces);
-  for(int i=0;i<nfaces;++i) {
-    Sgrad[i] = DenseMatrix::zeros(nposes, 9);
-    for(int j=0;j<nposes;++j) {
-      // assign the reshaped gradient to the i-th row of Sgrad
-      // Sij = triangleGradient(S{i}, j);
-      // Smat(i,:) = reshape(Sij, 1, 9);
-
-      // FIXME: not implemented yet
+  vector<Array2D<double>> Sgrad(nposes);
+  for(int i=0;i<nposes;++i) {
+    Sgrad[i] = Array2D<double>::zeros(nfaces, 9);
+    for(int j=0;j<nfaces;++j) {
+      // assign the reshaped gradient to the j-th row of Sgrad[i]
+      auto Sij = triangleGradient(S[i], j);
+      auto Sij_ptr = Sgrad[i].rowptr(j);
+      for(int k=0;k<9;++k) Sij_ptr[k] = Sij(k);
     }
   }
 
@@ -234,9 +248,9 @@ void blendShapeGeneration() {
   bool converged = false;
   double ALPHA_THRES = 1e-6;
   double B_THRES = 1e-6;
-  double beta_max = 0.5; beta_min = 0.1;
-  double gamma_max = 0.01; gamma_min = 0.01;
-  double eta_max = 10.0; eta_min = 1.0;
+  double beta_max = 0.5, beta_min = 0.1;
+  double gamma_max = 0.01, gamma_min = 0.01;
+  double eta_max = 10.0, eta_min = 1.0;
   int iters = 0;
   const int maxIters = 10;
   DenseMatrix B_error = DenseMatrix::zeros(maxIters, nshapes);
@@ -247,17 +261,17 @@ void blendShapeGeneration() {
       ++iters;
 
       // refine blendshapes
-      beta = sqrt(iters/maxIters) * (beta_min - beta_max) + beta_max;
-      gamma = gamma_max + iters/maxIters*(gamma_min-gamma_max);
-      eta = eta_max + iters/maxIters*(eta_min-eta_max);
+      double beta = sqrt(iters/maxIters) * (beta_min - beta_max) + beta_max;
+      double gamma = gamma_max + iters/maxIters*(gamma_min-gamma_max);
+      double eta = eta_max + iters/maxIters*(eta_min-eta_max);
 
       // B_new is a set of point clouds
       auto B_new = refineBlendShapes(S, Sgrad, B, alpha, beta, gamma, prior, w_prior, stationary_indices);
 
-      B_norm = zeros(1, nshapes);
+      //B_norm = zeros(1, nshapes);
       for(int i=0;i<nshapes;++i) {
           //B_norm(i) = norm(B[i+1].vertices-B_new[i], 2);
-          B[i+1].vertices = B_new[i];
+          B[i+1].verts = B_new[i];
           //B_error(iters, i) = sqrt(max(sum((B{i+1}.vertices-B_ref{i+1}.vertices).^2, 2)));
           //B{i+1} = alignMesh(B{i+1}, B{1}, stationary_indices);
       }
@@ -284,7 +298,7 @@ void blendShapeGeneration() {
         // make a copy of B0
         auto Ti = B0;
           for(int j=0;j<nshapes;++j) {
-              Ti.vertices += alpha[i](j) * dB[j];
+              Ti.verts += alpha[i](j) * dB[j];
           }
           //Ti = alignMesh(Ti, S0{i});
           //S_error(iters, i) = sqrt(max(sum((Ti.vertices-S0{i}.vertices).^2, 2)));
@@ -307,15 +321,13 @@ void blendShapeGeneration() {
       }
 
       // compute deformation gradients for S
-      // compute deformation gradients for S
-      for(int i=0;i<nfaces;++i) {
-        Sgrad[i] = DenseMatrix::zeros(nposes, 9);
-        for(int j=0;j<nposes;++j) {
-          // assign the reshaped gradient to the i-th row of Sgrad
-          // Sij = triangleGradient(S{i}, j);
-          // Smat(i,:) = reshape(Sij, 1, 9);
-
-          // FIXME: not implemented yet
+      for(int i=0;i<nposes;++i) {
+        Sgrad[i] = Array2D<double>::zeros(nfaces, 9);
+        for(int j=0;j<nfaces;++j) {
+          // assign the reshaped gradient to the j-th row of Sgrad[i]
+          auto Sij = triangleGradient(S[i], j);
+          auto Sij_ptr = Sgrad[i].rowptr(j);
+          for(int k=0;k<9;++k) Sij_ptr[k] = Sij(k);
         }
       }
   }
@@ -334,9 +346,9 @@ int main(int argc, char *argv[])
   global::initialize();
 
 #if RUN_TESTS
-  testMatrix();
-  testSparseMatrix();
-  testCeres();
+  TestCases::testMatrix();
+  TestCases::testSaprseMatrix();
+  TestCases::testCeres();
 
   return 0;
 #else

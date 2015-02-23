@@ -9,6 +9,48 @@ BasicMesh::~BasicMesh()
 {
 }
 
+PointCloud BasicMesh::samplePoints(int points_per_face, double zcutoff) const
+{
+  int npoints = 0;
+  vector<int> validfaces;
+
+  for (int i = 0; i < T.faces.nrow; ++i) {
+    // sample 8 points per face
+    int fidx = i * 3;
+    int v1 = T.faces(fidx), v2 = T.faces(fidx+1), v3 = T.faces(fidx+2);
+    double z1 = T.verts(v1*3+2), z2 = T.verts(v2*3+2), z3 = T.verts(v3*3+2);
+    double zc = (z1 + z2 + z3) / 3.0;
+    if (zc > zcutoff) {
+      npoints += points_per_face;
+      validfaces.push_back(i);
+    }
+  }
+  cout << "npoints = " << npoints << endl;
+  PointCloud P;
+  P.points.resize(npoints, 3);
+  for (int i = 0, offset=0; i < validfaces.size(); ++i) {
+    int fidx = validfaces[i] * 3;
+    int v1 = T.faces(fidx), v2 = T.faces(fidx+1), v3 = T.faces(fidx+2);
+    double x1 = T.verts(v1*3), x2 = T.verts(v2*3), x3 = T.verts(v3*3);
+    double y1 = T.verts(v1*3+1), y2 = T.verts(v2*3+1), y3 = T.verts(v3*3+1);
+    double z1 = T.verts(v1*3+2), z2 = T.verts(v2*3+2), z3 = T.verts(v3*3+2);
+
+    for(int j=0;j<points_per_face;++j) {
+        // sample a point
+        double alpha = rand()/(double)RAND_MAX,
+            beta = rand()/(double)RAND_MAX * (1-alpha),
+            gamma = 1.0 - alpha - beta;
+
+        auto Pptr = P.points.rowptr(offset); ++offset;
+        Pptr[0] = x1*alpha + x2*beta + x3*gamma;
+        Pptr[1] = y1*alpha + y2*beta + y3*gamma;
+        Pptr[2] = z1*alpha + z2*beta + z3*gamma;
+      }
+    }
+  cout << "points sampled." << endl;
+  return P;
+}
+
 void BasicMesh::load(const string &filename)
 {
   PhGUtils::OBJLoader loader;

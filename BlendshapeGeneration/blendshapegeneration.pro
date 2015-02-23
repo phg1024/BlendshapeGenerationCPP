@@ -10,7 +10,8 @@ HEADERS += blendshapegeneration.h \
     meshtransferer.h \
     meshdeformer.h \
     pointcloud.h \
-    basicmesh.h
+    basicmesh.h \
+    testcases.h
 SOURCES += blendshapegeneration.cpp \
            main.cpp \
     common.cpp \
@@ -20,7 +21,8 @@ SOURCES += blendshapegeneration.cpp \
     meshtransferer.cpp \
     meshdeformer.cpp \
     pointcloud.cpp \
-    basicmesh.cpp
+    basicmesh.cpp \
+    testcases.cpp
 RESOURCES += blendshapegeneration.qrc
 
 FORMS += \

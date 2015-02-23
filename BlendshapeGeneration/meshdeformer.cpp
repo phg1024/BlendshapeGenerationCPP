@@ -53,7 +53,6 @@ BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const PointCloud &lm_
     delta_i[2] = Vi[2] - Si[2] * invNi;
   }
 
-  // this part is okay
   auto makeVMatrix = [&](double x, double y, double z) {
     DenseMatrix V = DenseMatrix::zeros(3, 7);
     /*
@@ -131,6 +130,7 @@ BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const PointCloud &lm_
   BasicMesh D = S.clone(); // make a copy of the source mesh
 
   // generate a point cloud from the target mesh
+#if 0
   const int POINTS_PER_FACE = 2;
   int npoints = 0;
   for (int i = 0; i < T.faces.nrow; ++i) {
@@ -166,6 +166,9 @@ BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const PointCloud &lm_
     }
   }
   cout << "points sampled." << endl;
+#else
+  PointCloud P = T.samplePoints(2, -0.1);
+#endif
 
   // the number of matrix elements in distortion term
   int ndistortion = 0;

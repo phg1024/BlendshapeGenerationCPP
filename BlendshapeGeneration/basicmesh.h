@@ -1,5 +1,6 @@
 #pragma once
 #include "ndarray.hpp"
+#include "pointcloud.h"
 
 #include "Geometry/MeshLoader.h"
 
@@ -42,10 +43,40 @@ struct BasicMesh
     return m;
   }
 
+  PointCloud samplePoints(int points_per_face, double zcutoff) const;
+  template <typename Pred>
+  vector<int> filterFaces(Pred p);
+  template <typename Pred>
+  vector<int> filterVertices(Pred p);
+
   void load(const string &filename);
   void write(const string &filename);
 
   Array2D<int> faces;
   Array2D<double> verts;
 };
+
+template <typename Pred>
+vector<int> BasicMesh::filterFaces(Pred p)
+{
+  vector<int> v;
+  for(int i=0;i<faces.nrow;++i) {
+    if( p(faces.rowptr(i)) ) {
+      v.push_back(i);
+    }
+  }
+  return v;
+}
+
+template <typename Pred>
+vector<int> BasicMesh::filterVertices(Pred p)
+{
+  vector<int> v;
+  for(int i=0;i<verts.nrow;++i) {
+    if( p(verts.rowptr(i)) ) {
+      v.push_back(i);
+    }
+  }
+  return v;
+}
 
