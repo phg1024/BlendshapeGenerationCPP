@@ -43,6 +43,17 @@ struct Array1D {
     return ret;
   }
 
+  static Array1D random(int n) {
+    Array1D ret(n);
+    for(int i=0;i<n;++i) ret(i)=rand()/(double)RAND_MAX;
+    return ret;
+  }
+
+  void resize(int n) {
+    nrow = n;
+    data.reset(new T[n]);
+  }
+
   T& operator()(int idx) { return data.get()[idx]; }
   const T& operator()(int idx) const { return data.get()[idx]; }
 

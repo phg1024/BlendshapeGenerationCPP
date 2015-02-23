@@ -44,7 +44,7 @@ void laplacianDeformation() {
   vector<int> landmarks = loadLandmarks(datapath+"landmarks_74_new.txt");
   deformer.setLandmarks(landmarks);
 
-  int objidx = 2;
+  int objidx = 1;
   BasicMesh T;
   T.load(datapath + "Tester_1/TrainingPose/pose_" + to_string(objidx) + ".obj");
 
@@ -99,6 +99,7 @@ Array1D<double> estimateWeights(const BasicMesh &S,
                                 int itmax) {
   Array1D<double> w;
 
+  throw "Not implemented yet.";
   return w;
 }
 
@@ -111,6 +112,8 @@ vector<Array2D<double>> refineBlendShapes(const vector<BasicMesh> &S,
                                           const Array2D<double> w_prior,
                                           const vector<int> stationary_indices) {
   vector<Array2D<double>> B_new;
+
+  throw "Not implemented yet.";
 
   return B_new;
 }
@@ -156,12 +159,40 @@ void blendShapeGeneration() {
     // estimate the blendshape weights from the input training poses, then use
     // the estimated weights to generate a new set of training poses
 
+    // compute the delta shapes of the renference shapes
+    vector<Array2D<double>> dB_ref(nshapes);
+    for(int i=0;i<nshapes;++i) {
+      dB_ref[i] = B_ref[i+1].verts - B0.verts;
+    }
 
+    // estimate the weights of the training poses using the ground truth blendshapes
+    for(int i=0;i<nposes;++i) {
+      alpha_ref[i] = estimateWeights(S0[i], B0, dB_ref,
+                                 Array1D<double>::random(nshapes),
+                                 Array1D<double>::zeros(nshapes),
+                                 0.0, 5);
+    }
+
+    // use the reference weights to build a set of training poses
+    // this set is used as ground truth set
+    vector<BasicMesh> Sgen(nposes);
+    for(int i=0;i<nposes;++i) {
+      // make a copy of B0
+      auto Ti = B0;
+        for(int j=0;j<nshapes;++j) {
+            Ti.verts += alpha_ref[i](j) * dB_ref[j];
+        }
+        //Ti = alignMesh(Ti, S0{i});
+        //S_error(iters, i) = sqrt(max(sum((Ti.vertices-S0{i}.vertices).^2, 2)));
+
+        // update the reconstructed mesh
+        Sgen[i] = Ti;
+    }
+    S0 = Sgen;
   }
   else {
     // fill alpha_ref with zeros
-
-
+    for(int i=0;i<nposes;++i) alpha_ref[i] = Array1D<double>::random(nshapes);
   }
 
   // create point clouds from S0
@@ -388,11 +419,13 @@ int main(int argc, char *argv[])
   return 0;
 #else
 
-  //laplacianDeformation();
+//  laplacianDeformation();
+//  return 0;
 
-  //deformationTransfer();
+//  deformationTransfer();
+//  return 0;
 
-  //blendShapeGeneration();
+  blendShapeGeneration();
 
   global::finalize();
   return 0;
