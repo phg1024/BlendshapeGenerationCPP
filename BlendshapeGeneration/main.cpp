@@ -116,6 +116,19 @@ private:
   const vector<Array2D<double>> &dB;
 };
 
+struct PriorResidue {
+  PriorResidue(double *prior):mprior(prior){}
+
+  template <typename T>
+  bool operator()(const T* const alpha, T* residual) const {
+    int nshapes = 46;
+    for(int i=0;i<nshapes;++i) residual[i] = T(mprior[i]) - alpha[i];
+    return true;
+  }
+private:
+  const double *mprior;
+};
+
 Array1D<double> estimateWeights(const BasicMesh &S,
                                 const BasicMesh &B0,
                                 const vector<Array2D<double>> &dB,
@@ -139,6 +152,13 @@ Array1D<double> estimateWeights(const BasicMesh &S,
     CostFunction *costfun = new AutoDiffCostFunction<PointResidual, 3, 46>(
           new PointResidual(dx, dy, dz, i, dB));
     problem.AddResidualBlock(costfun, NULL, w.data.get());
+  }
+
+  // add prior if necessary
+  if( fabs(w_prior) > 1e-6 ) {
+    problem.AddResidualBlock(
+          new AutoDiffCostFunction<PriorResidue, 46, 46>(new PriorResidue(wp.data.get())),
+          NULL, w.data.get());
   }
 
   cout << "w0 = " << endl;
@@ -184,19 +204,21 @@ vector<BasicMesh> refineBlendShapes(const vector<BasicMesh> &S,
 
   int nrows = nposes + nshapes;
   int ncols = nshapes;
-  DenseMatrix A(nrows, ncols);
+  DenseMatrix A0(nrows, ncols);
   // the upper part of A is always the alpha matrix
   for(int i=0;i<nposes;++i) {
     for(int j=0;j<ncols;++j) {
-      A(i, j) = alpha[i](j);
+      A0(i, j) = alpha[i](j);
     }
   }
 
   cout << BLUE << "computing perface gradients." << RESET << endl;
   vector<DenseMatrix> M(nfaces);
+
+#pragma omp parallel for
   for(int i=0;i<nfaces;++i) {
     if( i % 5000 == 0 ) cout << RED << i << " faces processed." << RESET << endl;
-
+    DenseMatrix A = A0;
     DenseMatrix b(nrows, 9);
 
     auto B0i_ptr = B0grad.rowptr(i);
@@ -241,7 +263,11 @@ vector<BasicMesh> refineBlendShapes(const vector<BasicMesh> &S,
     vector<PhGUtils::Matrix3x3d> Bgrad_i(nfaces);
     for(int j=0;j<nfaces;++j) {
       auto &Mj = M[j];
-      for(int k=0;k<9;++k) Bgrad_i[j](k) = Mj(i, k);
+      PhGUtils::Matrix3x3d M0j(B0grad.rowptr(j), false);
+      PhGUtils::Matrix3x3d Mij;
+      for(int k=0;k<9;++k) Mij(k) = Mj(i, k);
+      PhGUtils::Matrix3x3d Bgrad_ij = ((Mij + M0j) * M0j.inv()).transposed();
+      for(int k=0;k<9;++k) Bgrad_i[j](k) = Bgrad_ij(k);
     }
     B_new[i] = transferer.transfer(Bgrad_i);
   }
@@ -299,7 +325,7 @@ void blendShapeGeneration() {
     // estimate the weights of the training poses using the ground truth blendshapes
     for(int i=0;i<nposes;++i) {
       alpha_ref[i] = estimateWeights(S0[i], B0, dB_ref,
-                                     Array1D<double>::random(nshapes),
+                                     Array1D<double>::ones(nshapes) * 0.25,
                                      Array1D<double>::zeros(nshapes),
                                      0.0, 5);
       cout << alpha_ref[i] << endl;
@@ -372,9 +398,8 @@ void blendShapeGeneration() {
   auto B_init = B;
   cout << BLUE << "initial set of blendshapes created." << RESET << endl;
 
-  return ;
-
   // compute deformation gradient prior from the template mesh
+  cout << BLUE << "computing priors." << RESET << endl;
   int nfaces = A0.faces.nrow;
 
   Array2D<double> MB0 = Array2D<double>::zeros(nfaces, 9);
@@ -401,13 +426,13 @@ void blendShapeGeneration() {
       auto MAij = triangleGradient(Ai, j);
       auto MA0j_ptr = MA0.rowptr(j);
       // create a 3x3 matrix from MA0j_ptr
-      auto MA0j = PhGUtils::Matrix3x3d(MA0j_ptr);
+      auto MA0j = PhGUtils::Matrix3x3d(MA0j_ptr, false);
       auto GA0Ai = MAij * (MA0j.inv());
       auto MB0j_ptr = MB0.rowptr(j);
-      auto MB0j = PhGUtils::Matrix3x3d(MB0j_ptr);
+      auto MB0j = PhGUtils::Matrix3x3d(MB0j_ptr, false);
       auto Pij = GA0Ai * MB0j - MB0j;
       double MAij_norm = (MAij-MA0j).norm();
-      w_prior_i[j] = (1+MAij_norm)/(kappa+MAij_norm);
+      w_prior_i[j] = (1+MAij_norm)/pow(kappa+MAij_norm, 2.0) * 100;
 
       auto Pij_ptr = Pi.rowptr(j);
       for(int k=0;k<9;++k) Pij_ptr[k] = Pij(k);
@@ -416,6 +441,16 @@ void blendShapeGeneration() {
     // prior(i,:) = Pi;
     memcpy(prior_i, Pi.data.get(), sizeof(double)*nfaces*9);
   }
+
+  ofstream fprior("prior.txt");
+  fprior<<prior;
+  fprior.close();
+
+  ofstream fwprior("w_prior.txt");
+  fwprior<<w_prior;
+  fwprior.close();
+
+  cout << BLUE << "priors computed." << RESET << endl;
 
   // compute the delta shapes
   vector<Array2D<double>> dB(nshapes);
@@ -433,7 +468,7 @@ void blendShapeGeneration() {
   }
   auto alpha_init = alpha;
 
-  cout << "initialization done." << endl;
+  cout << RED << "initialization done." << RESET << endl;
 
   // reset the parameters
   B = B_init;

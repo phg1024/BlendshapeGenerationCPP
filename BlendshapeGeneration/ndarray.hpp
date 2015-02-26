@@ -37,6 +37,13 @@ struct Array1D {
 //    }
 //    return (*this);
 //  }
+
+  static Array1D ones(int n) {
+    Array1D ret(n);
+    for(int i=0;i<n;++i) ret(i) = 1.0;
+    return ret;
+  }
+
   static Array1D zeros(int n) {
     Array1D ret(n);
     memset(ret.data.get(), 0, sizeof(T)*n);
@@ -46,6 +53,12 @@ struct Array1D {
   static Array1D random(int n) {
     Array1D ret(n);
     for(int i=0;i<n;++i) ret(i)=rand()/(double)RAND_MAX;
+    return ret;
+  }
+
+  Array1D operator*(double scale) {
+    Array1D ret = (*this);
+    for(int i=0;i<nrow;++i) ret(i) *= scale;
     return ret;
   }
 
