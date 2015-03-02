@@ -9,6 +9,19 @@ DenseVector::DenseVector(int n) {
 
 DenseVector::~DenseVector()
 {
-  if( ptr != nullptr ) cholmod_free_dense(&ptr, global::cm);
+    if( ptr != nullptr ) cholmod_free_dense(&ptr, global::cm);
+}
+
+double DenseVector::norm() const
+{
+    // not implemented yet
+}
+
+ostream &operator<<(ostream &os, const DenseVector &v)
+{
+    for(int i=0;i<v.ptr->nrow;++i) {
+        os << v.x[i] << ' ';
+    }
+    return os;
 }
 

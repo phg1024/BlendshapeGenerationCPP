@@ -370,7 +370,7 @@ void blendShapeGeneration() {
   for(int i=0;i<nposes;++i) {
     PointCloud lm_points;
     lm_points.points = S0[i].verts.row(landmarks);
-    S[i] = deformer.deformWithPoints(P[i], lm_points, 2);
+    S[i] = deformer.deformWithPoints(P[i], lm_points, 5);
     S[i].write("Sinit_" + to_string(i) + ".obj");
   }
   auto S_init = S;
@@ -431,7 +431,7 @@ void blendShapeGeneration() {
       auto MB0j = PhGUtils::Matrix3x3d(MB0j_ptr, false);
       auto Pij = GA0Ai * MB0j - MB0j;
       double MAij_norm = (MAij-MA0j).norm();
-      w_prior_i[j] = (1+MAij_norm)/pow(kappa+MAij_norm, 2.0) * 100;
+      w_prior_i[j] = (1+MAij_norm)/pow(kappa+MAij_norm, 2.0);
 
       auto Pij_ptr = Pi.rowptr(j);
       for(int k=0;k<9;++k) Pij_ptr[k] = Pij(k);
@@ -517,9 +517,9 @@ void blendShapeGeneration() {
   bool converged = false;
   double ALPHA_THRES = 1e-6;
   double B_THRES = 1e-6;
-  double beta_max = 0.5, beta_min = 0.1;
+  double beta_max = 0.05, beta_min = 0.01;
   double gamma_max = 0.01, gamma_min = 0.01;
-  double eta_max = 10.0, eta_min = 1.0;
+  double eta_max = 1.0, eta_min = 0.1;
   int iters = 0;
   const int maxIters = 5;
   DenseMatrix B_error = DenseMatrix::zeros(maxIters, nshapes);
@@ -537,15 +537,17 @@ void blendShapeGeneration() {
     // B_new is a set of new blendshapes
     auto B_new = refineBlendShapes(S, Sgrad, B, alpha, beta, gamma, prior, w_prior, stationary_indices);
 
-    //B_norm = zeros(1, nshapes);
+    DenseVector B_norm(nshapes);
+    double B_norm_max = 0;
     for(int i=0;i<nshapes;++i) {
-      //B_norm(i) = norm(B[i+1].vertices-B_new[i], 2);
+      auto Bdiff = B[i+1].verts - B_new[i].verts;
+      B_norm(i) = cblas_dnrm2(Bdiff.nrow*Bdiff.ncol, Bdiff.data.get(), 1);
+      B_norm_max = max(B_norm_max, B_norm(i));
       B[i+1].verts = B_new[i].verts;
-      //B_error(iters, i) = sqrt(max(sum((B{i+1}.vertices-B_ref{i+1}.vertices).^2, 2)));
       //B{i+1} = alignMesh(B{i+1}, B{1}, stationary_indices);
     }
-    //fprintf('max(B_error) = %.6f\n', max(B_error(iters, :)));
-    //converged = converged & (max(B_norm) < B_THRES);
+    cout << GREEN << "Bnorm = " << B_norm << RESET << endl;
+    converged = converged & (B_norm_max < B_THRES);
 
     // update delta shapes
     for(int i=0;i<nshapes;++i) {
@@ -553,15 +555,18 @@ void blendShapeGeneration() {
     }
 
     // update weights
+    DenseVector alpha_norm(nposes);
+    double alpha_norm_max = 0;
     vector<Array1D<double>> alpha_new(nposes);
     for(int i=0;i<nposes;++i) {
       alpha_new[i] = estimateWeights(S[i], B0, dB, alpha[i], alpha_ref[i], eta, 2);
+      auto alpha_diff = alpha_new[i] - alpha[i];
+      alpha_norm(i) = cblas_dnrm2(alpha_diff.nrow, alpha_diff.data.get(), 1);
+      alpha_norm_max = max(alpha_norm_max, alpha_norm(i));
     }
-
-    //alpha_norm = norm(cell2mat(alpha) - cell2mat(alpha_new));
-    //disp(alpha_norm);
     alpha = alpha_new;
-    //converged = converged & (alpha_norm < ALPHA_THRES);
+    cout << GREEN << "norm(alpha) = " << alpha_norm << RESET << endl;
+    converged = converged & (alpha_norm_max < ALPHA_THRES);
 
     for(int i=0;i<nposes;++i) {
       // make a copy of B0
@@ -586,7 +591,7 @@ void blendShapeGeneration() {
       deformer.setLandmarks(landmarks);
       PointCloud lm_points;
       lm_points.points = S0[i].verts.row(landmarks);
-      S[i] = deformer.deformWithPoints(P[i], lm_points, 2);
+      S[i] = deformer.deformWithPoints(P[i], lm_points, 5);
     }
 
     // compute deformation gradients for S
@@ -604,6 +609,11 @@ void blendShapeGeneration() {
   // write out the blendshapes
   for(int i=0;i<nshapes+1;++i) {
     B[i].write("B_"+to_string(i)+".obj");
+  }
+
+  // write out the blendshapes
+  for(int i=0;i<nposes;++i) {
+    S[i].write("S_"+to_string(i)+".obj");
   }
 }
 

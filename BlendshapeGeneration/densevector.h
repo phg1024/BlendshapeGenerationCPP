@@ -15,7 +15,9 @@ public:
     int length() const { return ptr->nrow; }
     double& operator()(int i) { return x[i]; }
     const double& operator()(int i) const { return x[i]; }
+    double norm() const;
 
+    friend ostream& operator<<(ostream& os, const DenseVector &v);
 private:
     friend class SparseMatrix;
     friend class DenseMatrix;

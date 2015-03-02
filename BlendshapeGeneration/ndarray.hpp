@@ -62,6 +62,12 @@ struct Array1D {
     return ret;
   }
 
+  Array1D operator-(const Array1D &rhs) {
+    Array1D ret = (*this);
+    for(int i=0;i<nrow;++i) ret(i) -= rhs(i);
+    return ret;
+  }
+
   void resize(int n) {
     nrow = n;
     data.reset(new T[n]);

@@ -415,9 +415,9 @@ BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const PointCloud &lm_
     cholmod_dense *Mtb = cholmod_allocate_dense(MtM->nrow, 1, MtM->nrow, CHOLMOD_REAL, global::cm);
     double alpha[2] = {1, 0}; double beta[2] = {0, 0};
 
-    cholmod_print_sparse(Mt, "Mt", global::cm);
-    cholmod_print_dense(bs, "bs", global::cm);
-    cholmod_print_dense(Mtb, "Mtb", global::cm);
+    //cholmod_print_sparse(Mt, "Mt", global::cm);
+    //cholmod_print_dense(bs, "bs", global::cm);
+    //cholmod_print_dense(Mtb, "Mtb", global::cm);
     cholmod_sdmult(Mt, 0, alpha, beta, bs, Mtb, global::cm);
 
     cout << "Solving (M'*M)\(M'*b) ..." << endl;
@@ -429,7 +429,7 @@ BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const PointCloud &lm_
     cout << "done." << endl;
     tsolve.toc("solving linear equations");
 
-    cholmod_print_dense(x, "x", global::cm);
+    //cholmod_print_dense(x, "x", global::cm);
     ofstream fout("x.txt");
     for(int xidx=0;xidx<x->nrow;++xidx) fout << ((double*)x->x) [xidx] << endl;
     fout.close();
@@ -465,7 +465,7 @@ BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const PointCloud &lm_
 
 BasicMesh MeshDeformer::deformWithPoints(const PointCloud &P, const PointCloud &lm_points, int itmax)
 {
-  cout << "deformation with mesh ..." << endl;
+  //cout << "deformation with mesh ..." << endl;
   int nverts = S.verts.nrow;
   int nfaces = S.faces.nrow;
 
@@ -600,7 +600,7 @@ BasicMesh MeshDeformer::deformWithPoints(const PointCloud &P, const PointCloud &
   int iters = 0;
 
   double ratio_data2icp = 10.0*lm_points.points.nrow / (double) S.verts.nrow;
-  cout << ratio_data2icp << endl;
+  //cout << ratio_data2icp << endl;
   double w_icp = 0, w_icp_step = ratio_data2icp;
   double w_data = 10.0, w_data_step = 1.0;
   double w_dist = 10000.0 * ratio_data2icp, w_dist_step = 1000.0 * ratio_data2icp;
@@ -652,17 +652,17 @@ BasicMesh MeshDeformer::deformWithPoints(const PointCloud &P, const PointCloud &
     nterms += ndistortion;
     nrows += S.verts.nrow * 3;
 
-    cout << "nterms = " << nterms << endl;
-    cout << "nrows = " << nrows << endl;
+    //cout << "nterms = " << nterms << endl;
+    //cout << "nrows = " << nrows << endl;
 
     SparseMatrix M(nrows, nverts*3, nterms);
     vector<double> b(nrows, 0);
     int roffset = 0;
 
-    cout << "Filling in matrix elements ..." << endl;
+    //cout << "Filling in matrix elements ..." << endl;
 
     // ICP term
-    cout << "assembling ICP terms ..." << endl;
+    //cout << "assembling ICP terms ..." << endl;
     PhGUtils::Timer ticp;
     ticp.tic();
     for (int i = 0; i < npoints; ++i) {
@@ -690,7 +690,7 @@ BasicMesh MeshDeformer::deformWithPoints(const PointCloud &P, const PointCloud &
     ticp.toc("assembling ICP term");
 
     // landmarks term term
-    cout << "assembling landmarks terms ..." << endl;
+    //cout << "assembling landmarks terms ..." << endl;
     PhGUtils::Timer tland;
     tland.tic();
     for (int i = 0, ioffset=0; i < ndata; ++i) {
@@ -727,7 +727,7 @@ BasicMesh MeshDeformer::deformWithPoints(const PointCloud &P, const PointCloud &
     tland.toc("assembling landmarks term");
 
     // prior term, i.e. similarity to source mesh
-    cout << "assembling prior terms ..." << endl;
+    //cout << "assembling prior terms ..." << endl;
     PhGUtils::Timer tprior;
     tprior.tic();
     for (int i = 0, ioffset = 0; i < nprior; ++i) {
@@ -749,7 +749,7 @@ BasicMesh MeshDeformer::deformWithPoints(const PointCloud &P, const PointCloud &
     // Laplacian distortion term
     PhGUtils::Timer tdist;
     tdist.tic();
-    cout << "assembling Laplacian terms ..." << endl;
+    //cout << "assembling Laplacian terms ..." << endl;
     for (int i = 0; i < nverts; ++i) {
       auto& Ti = Tm[i];
       auto& Ni = N[i];
@@ -799,12 +799,12 @@ BasicMesh MeshDeformer::deformWithPoints(const PointCloud &P, const PointCloud &
     }
     tdist.toc("assembling distortion term");
 
-    cout << nterms << endl;
+    //cout << nterms << endl;
 
     // solve sparse linear system
-    cout << "M matrix assembled..." << endl;
+    //cout << "M matrix assembled..." << endl;
     // compute M' * M
-    cout << "computing M'*M..." << endl;
+    //cout << "computing M'*M..." << endl;
 
 
 //    ofstream mfout("M.txt");
@@ -821,27 +821,27 @@ BasicMesh MeshDeformer::deformWithPoints(const PointCloud &P, const PointCloud &
     MtM->stype = 1;
 
     // compute M' * b
-    cout << "computing M'*b..." << endl;
+    //cout << "computing M'*b..." << endl;
     cholmod_dense *bs = cholmod_allocate_dense(Ms->nrow, 1, Ms->nrow, CHOLMOD_REAL, global::cm);
     memcpy(bs->x, &(b[0]), sizeof(double)*Ms->nrow);
     cholmod_dense *Mtb = cholmod_allocate_dense(MtM->nrow, 1, MtM->nrow, CHOLMOD_REAL, global::cm);
     double alpha[2] = {1, 0}; double beta[2] = {0, 0};
 
-    cholmod_print_sparse(Mt, "Mt", global::cm);
-    cholmod_print_dense(bs, "bs", global::cm);
-    cholmod_print_dense(Mtb, "Mtb", global::cm);
+    //cholmod_print_sparse(Mt, "Mt", global::cm);
+    //cholmod_print_dense(bs, "bs", global::cm);
+    //cholmod_print_dense(Mtb, "Mtb", global::cm);
     cholmod_sdmult(Mt, 0, alpha, beta, bs, Mtb, global::cm);
 
-    cout << "Solving (M'*M)\(M'*b) ..." << endl;
+    //cout << "Solving (M'*M)\(M'*b) ..." << endl;
     // solve (M'*M)\(M'*b)
     // solution vector
     cholmod_factor *L = cholmod_analyze(MtM, global::cm);
     cholmod_factorize(MtM, L, global::cm);
     cholmod_dense *x = cholmod_solve(CHOLMOD_A, L, Mtb, global::cm);
-    cout << "done." << endl;
+    //cout << "done." << endl;
     tsolve.toc("solving linear equations");
 
-    cholmod_print_dense(x, "x", global::cm);
+    //cholmod_print_dense(x, "x", global::cm);
 
     /*
     ofstream fout("x.txt");
