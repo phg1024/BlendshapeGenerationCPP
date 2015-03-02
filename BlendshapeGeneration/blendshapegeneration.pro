@@ -72,5 +72,9 @@ LIBS += -lcholmod -lcamd -lamd -lccolamd -lcolamd -lsuitesparseconfig -lcxsparse
 
 # CGAL
 LIBS += -lCGAL -lboost_system
+
+# GLEW
+INCLUDEPATH += /home/phg/SDKs/glew-1.12.0/include
+LIBS += -L/home/phg/SDKs/glew-1.12.0/lib
 }
 

@@ -216,38 +216,37 @@ vector<BasicMesh> refineBlendShapes(const vector<BasicMesh> &S,
   vector<DenseMatrix> M(nfaces);
 
 #pragma omp parallel for
-  for(int i=0;i<nfaces;++i) {
-    if( i % 5000 == 0 ) cout << RED << i << " faces processed." << RESET << endl;
+  for(int j=0;j<nfaces;++j) {
+    if( j % 5000 == 0 ) cout << RED << j << " faces processed." << RESET << endl;
     DenseMatrix A = A0;
     DenseMatrix b(nrows, 9);
 
-    auto B0i_ptr = B0grad.rowptr(i);
+    auto B0j_ptr = B0grad.rowptr(j);
     // upper part of b
-    for(int j=0;j<nposes;++j) {
-      // the gradients of the j-th pose
-      auto Sgrad_j = Sgrad[j];
-      // the pointer to the i-th face
-      auto Sgrad_ij = Sgrad_j.rowptr(i);
-
-      for(int k=0;k<9;++k) b(j, k) = Sgrad_ij[k] - B0i_ptr[k];
+    for(int i=0;i<nposes;++i) {
+      // the gradients of the i-th pose
+      auto Sgrad_j = Sgrad[i];
+      // the pointer to the j-th face
+      auto Sgrad_ij = Sgrad_j.rowptr(j);
+      for(int k=0;k<9;++k) b(i, k) = Sgrad_ij[k] - B0j_ptr[k];
     }
 
     // lower part of A
-    for(int j=0;j<nshapes;++j) {
-      A(j+nposes, j) = beta * w_prior(j, i);
+    for(int i=0;i<nshapes;++i) {
+      A(i+nposes, i) = beta * w_prior(i, j);
     }
 
     // the lower part of b
-    int ioffset = i*9;
-    for(int j=0;j<nshapes;++j) {
-      for(int k=0;k<9;++k) b(j+nposes, k) = w_prior(j, i) * prior(j, ioffset+k);
+    int ioffset = j*9;
+    for(int i=0;i<nshapes;++i) {
+      for(int k=0;k<9;++k) b(i+nposes, k) = beta * w_prior(i, j) * prior(i, ioffset+k);
     }
 
     // solve the equation A'A\A'b
     DenseMatrix At = A.transposed();
     DenseMatrix AtA = At * A;
     DenseMatrix Atb = At * b;
-    M[i] = (AtA.inv()) * Atb;     // nshapes x 9 matrix
+    M[j] = (AtA.inv()) * Atb;     // nshapes x 9 matrix
   }
 
   // reconstruct the blendshapes now
@@ -478,6 +477,9 @@ void blendShapeGeneration() {
   // main blendshape refinement loop
 
   // compute deformation gradients for S
+  // Note: this deformation gradient cannot be used to call
+  // MeshTransferer::transfer directly. See this function for
+  // details
   vector<Array2D<double>> Sgrad(nposes);
   for(int i=0;i<nposes;++i) {
     Sgrad[i] = Array2D<double>::zeros(nfaces, 9);
@@ -489,6 +491,28 @@ void blendShapeGeneration() {
     }
   }
 
+#if 0   // PASSED Verification
+
+  // verify the deformation gradients are computed correctly
+  cout << "Creating meshes for verification." << endl;
+  MeshTransferer transer;
+  transer.setSource(S.front());
+  transer.setTarget(S.front());
+  transer.setStationaryVertices(stationary_indices);
+  for(int i=0;i<nposes;++i) {
+    // assemble the set of deformation gradient
+    vector<PhGUtils::Matrix3x3d> grads;
+    for(int j=0;j<nfaces;++j) grads.push_back(
+                (PhGUtils::Matrix3x3d(Sgrad[i].rowptr(j))
+                * PhGUtils::Matrix3x3d(Sgrad[0].rowptr(j)).inv()).transposed()
+                );
+    BasicMesh Si = transer.transfer(grads);
+    Si.write("Sinit_verify_" + to_string(i) + ".obj");
+  }
+  cout << "done." << endl;
+  return;
+#endif
+
   // refine blendshapes as well as blendshape weights
   bool converged = false;
   double ALPHA_THRES = 1e-6;
@@ -497,7 +521,7 @@ void blendShapeGeneration() {
   double gamma_max = 0.01, gamma_min = 0.01;
   double eta_max = 10.0, eta_min = 1.0;
   int iters = 0;
-  const int maxIters = 1;
+  const int maxIters = 5;
   DenseMatrix B_error = DenseMatrix::zeros(maxIters, nshapes);
   DenseMatrix S_error = DenseMatrix::zeros(maxIters, nposes);
   while( !converged && iters < maxIters ) {
