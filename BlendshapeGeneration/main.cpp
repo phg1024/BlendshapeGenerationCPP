@@ -461,7 +461,8 @@ void blendShapeGeneration() {
   vector<Array1D<double>> alpha(nposes);
   for(int i=0;i<nposes;++i) {
     alpha[i] = estimateWeights(S[i], B0, dB,
-                               Array1D<double>::random(nshapes),
+                               //Array1D<double>::random(nshapes),
+                               Array1D<double>::ones(nshapes)*0.25,
                                Array1D<double>::zeros(nshapes),
                                0.0, 5);
   }
@@ -617,14 +618,15 @@ void blendShapeGeneration() {
   }
 }
 
+void printUsage() {
+  cout << "Deformation transfer: [program] -d" << endl;
+  cout << "Laplacian deformation: [program] -l" << endl;
+  cout << "Blendshape generation: [program] -b" << endl;
+  cout << "Blendshape visualization: [program] -v" << endl;
+}
+
 int main(int argc, char *argv[])
 {
-#if 0
-  QApplication a(argc, argv);
-  BlendshapeGeneration w;
-  w.show();
-  return a.exec();
-#else
   google::InitGoogleLogging(argv[0]);
 
   global::initialize();
@@ -633,21 +635,33 @@ int main(int argc, char *argv[])
   TestCases::testMatrix();
   TestCases::testSaprseMatrix();
   TestCases::testCeres();
-
   return 0;
 #else
 
-//  deformationTransfer();
-//  return 0;
+  if( argc < 2 ) {
+    printUsage();
+  }
 
-//  laplacianDeformation();
-//  return 0;
+  string option = argv[1];
 
-  blendShapeGeneration();
+  if( option == "-d") {
+    deformationTransfer();
+  }
+  else if( option == "-l" ) {
+    laplacianDeformation();
+  }
+  else if( option == "-b" ) {
+    blendShapeGeneration();
+  }
+  else if( option == "-v" ) {
+    // visualize blendshape
+    QApplication a(argc, argv);
+    BlendshapeGeneration w;
+    w.show();
+    return a.exec();
+  }
 
   global::finalize();
   return 0;
-#endif
-
 #endif
 }

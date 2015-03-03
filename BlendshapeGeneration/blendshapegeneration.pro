@@ -1,4 +1,4 @@
-QT += core widgets
+QT += core widgets opengl
 HEADERS += blendshapegeneration.h \
     common.h \
     sparsematrix.h \
@@ -75,6 +75,10 @@ LIBS += -lCGAL -lboost_system
 
 # GLEW
 INCLUDEPATH += /home/phg/SDKs/glew-1.12.0/include
-LIBS += -L/home/phg/SDKs/glew-1.12.0/lib
+LIBS += -L/home/phg/SDKs/glew-1.12.0/lib -lGLEW
+
+# GLUT
+INCLUDEPATH += /home/phg/SDKs/freeglut-2.8.1/include
+LIBS += -lGLU -lglut
 }
 

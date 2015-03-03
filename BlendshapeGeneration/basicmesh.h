@@ -48,12 +48,14 @@ struct BasicMesh
   vector<int> filterFaces(Pred p);
   template <typename Pred>
   vector<int> filterVertices(Pred p);
+  void computeNormals();
 
   void load(const string &filename);
   void write(const string &filename);
 
   Array2D<int> faces;
   Array2D<double> verts;
+  Array2D<double> norms;
 };
 
 template <typename Pred>

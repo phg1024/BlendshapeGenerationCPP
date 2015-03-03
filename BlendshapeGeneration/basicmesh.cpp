@@ -51,6 +51,26 @@ PointCloud BasicMesh::samplePoints(int points_per_face, double zcutoff) const
   return P;
 }
 
+void BasicMesh::computeNormals()
+{
+  norms.resize(faces.nrow, 3);
+  for(int i=0;i<faces.nrow;++i) {
+    int *v = faces.rowptr(i);
+    PhGUtils::Vector3d v0(verts.rowptr(v[0]));
+    PhGUtils::Vector3d v1(verts.rowptr(v[1]));
+    PhGUtils::Vector3d v2(verts.rowptr(v[2]));
+
+    auto v0v1 = v1 - v0;
+    auto v0v2 = v2 - v0;
+    auto n = PhGUtils::Vector3d(v0v1, v0v2);
+    n.normalize();
+
+    norms(i, 0) = n.x;
+    norms(i, 1) = n.y;
+    norms(i, 2) = n.z;
+  }
+}
+
 void BasicMesh::load(const string &filename)
 {
   PhGUtils::OBJLoader loader;
