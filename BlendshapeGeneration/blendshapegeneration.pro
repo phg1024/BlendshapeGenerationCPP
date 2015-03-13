@@ -54,8 +54,8 @@ message(building for linux)
 QMAKE_CXXFLAGS += -fopenmp
 
 # mkl
-INCLUDEPATH += /usr/local/include /opt/intel/mkl/include
-LIBS += -L/opt/intel/lib/intel64/ -L/opt/intel/mkl/lib/intel64/ -lmkl_intel_lp64 -lmkl_core -lmkl_intel_thread -liomp5 -ldl -lpthread -lm
+INCLUDEPATH += /usr/local/include /home/phg/SDKs/intel/mkl/include
+LIBS += -L/home/phg/SDKs/intel/lib/intel64/ -L/home/phg/SDKs/intel/mkl/lib/intel64/ -lmkl_intel_lp64 -lmkl_core -lmkl_intel_thread -liomp5 -ldl -lpthread -lm
 
 # PhGLib
 INCLUDEPATH += /home/phg/SDKs/PhGLib/include

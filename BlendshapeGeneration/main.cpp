@@ -50,7 +50,7 @@ void laplacianDeformation() {
 
   PointCloud lm_points;
   lm_points.points = T.verts.row(landmarks);
-  BasicMesh D = deformer.deformWithMesh(T, lm_points, 5);
+  BasicMesh D = deformer.deformWithMesh(T, lm_points, 20);
 
   D.write("deformed" + to_string(objidx) + ".obj");
 }

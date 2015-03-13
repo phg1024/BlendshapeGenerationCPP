@@ -17,7 +17,7 @@ BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const PointCloud &lm_
 {
 #define DEFORMWITHMESH_VIA_DEFORMWITHPOINTS 1
 #if DEFORMWITHMESH_VIA_DEFORMWITHPOINTS
-  PointCloud P = T.samplePoints(16, -0.1);
+  PointCloud P = T.samplePoints(8, -0.1);
   return deformWithPoints(P, lm_points, itmax);
 #else
   cout << "deformation with mesh ..." << endl;
@@ -602,10 +602,14 @@ BasicMesh MeshDeformer::deformWithPoints(const PointCloud &P, const PointCloud &
   double ratio_data2icp = 10.0*lm_points.points.nrow / (double) S.verts.nrow;
   //cout << ratio_data2icp << endl;
   double w_icp = 0, w_icp_step = ratio_data2icp;
-  double w_data = 10.0, w_data_step = 1.0;
-  double w_dist = 10000.0 * ratio_data2icp, w_dist_step = 1000.0 * ratio_data2icp;
-  double w_prior = 0.001, w_prior_step = 0.000095;
+  double w_data = 10.0, w_data_step = w_data/itmax;
+  double w_dist = 10000.0 * ratio_data2icp, w_dist_step = w_dist/itmax;
+  double w_prior = 0.001, w_prior_step = w_prior*0.95/itmax;
 
+#define ANALYZE_ONCE 1  // analyze MtM only once
+#if ANALYZE_ONCE
+  cholmod_factor *L = nullptr;
+#endif
   while (iters++ < itmax) {
     cout << "iteration " << iters << endl;
 
@@ -627,6 +631,7 @@ BasicMesh MeshDeformer::deformWithPoints(const PointCloud &P, const PointCloud &
 
       double Ei = sqrt(dx*dx + dy*dy + dz*dz);
       Efit += Ei;
+      //Efit = max(Efit, Ei);
     }
     Efit /= npoints;
     cout << RED << "Efit = " << Efit << RESET << endl;
@@ -812,8 +817,8 @@ BasicMesh MeshDeformer::deformWithPoints(const PointCloud &P, const PointCloud &
 //    mfout.close();
 
 
-    PhGUtils::Timer tsolve;
-    tsolve.tic();
+    PhGUtils::Timer tmatrix;
+    tmatrix.tic();
 
     auto Ms = M.to_sparse();
     auto Mt = cholmod_transpose(Ms, 2, global::cm);
@@ -825,6 +830,11 @@ BasicMesh MeshDeformer::deformWithPoints(const PointCloud &P, const PointCloud &
     cholmod_dense *bs = cholmod_allocate_dense(Ms->nrow, 1, Ms->nrow, CHOLMOD_REAL, global::cm);
     memcpy(bs->x, &(b[0]), sizeof(double)*Ms->nrow);
     cholmod_dense *Mtb = cholmod_allocate_dense(MtM->nrow, 1, MtM->nrow, CHOLMOD_REAL, global::cm);
+    tmatrix.toc("constructing linear equations");
+
+    PhGUtils::Timer tsolve;
+    tsolve.tic();
+
     double alpha[2] = {1, 0}; double beta[2] = {0, 0};
 
     //cholmod_print_sparse(Mt, "Mt", global::cm);
@@ -834,8 +844,14 @@ BasicMesh MeshDeformer::deformWithPoints(const PointCloud &P, const PointCloud &
 
     //cout << "Solving (M'*M)\(M'*b) ..." << endl;
     // solve (M'*M)\(M'*b)
-    // solution vector
+    // solution vector    
+#if ANALYZE_ONCE
+    if( L == nullptr )
+      L = cholmod_analyze(MtM, global::cm);
+#else
     cholmod_factor *L = cholmod_analyze(MtM, global::cm);
+#endif
+
     cholmod_factorize(MtM, L, global::cm);
     cholmod_dense *x = cholmod_solve(CHOLMOD_A, L, Mtb, global::cm);
     //cout << "done." << endl;
@@ -858,7 +874,9 @@ BasicMesh MeshDeformer::deformWithPoints(const PointCloud &P, const PointCloud &
     cholmod_free_sparse(&MtM, global::cm);
     cholmod_free_dense(&bs, global::cm);
     cholmod_free_dense(&Mtb, global::cm);
+#if !ANALYZE_ONCE
     cholmod_free_factor(&L, global::cm);
+#endif
     cholmod_free_dense(&x, global::cm);
 
     // update weighting factors
@@ -871,7 +889,9 @@ BasicMesh MeshDeformer::deformWithPoints(const PointCloud &P, const PointCloud &
     // decrease w_prior
     w_prior = (itmax - iters) * w_prior_step;
   }
-
+#if ANALYZE_ONCE
+  cholmod_free_factor(&L, global::cm);
+#endif
   return D;
 }
 
