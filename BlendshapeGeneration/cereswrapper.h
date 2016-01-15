@@ -4,9 +4,9 @@
 #include "common.h"
 
 #include "ceres/ceres.h"
-#include "glog/logging.h"
 
 using ceres::AutoDiffCostFunction;
+using ceres::NumericDiffCostFunction;
 using ceres::CostFunction;
 using ceres::Problem;
 using ceres::Solver;
