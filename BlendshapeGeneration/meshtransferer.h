@@ -2,7 +2,7 @@
 #define MESHTRANSFERER_H
 
 #include "common.h"
-#include "basicmesh.h"
+#include <MultilinearReconstruction/basicmesh.h>
 #include "Geometry/matrix.hpp"
 
 class MeshTransferer
@@ -28,7 +28,7 @@ private:
   bool S0set, T0set;
   BasicMesh S0, T0;
   vector<PhGUtils::Matrix3x3d> S0grad, T0grad;
-  Array1D<double> Ds;
+  vector<double> Ds;
   vector<int> stationary_vertices;
 };
 

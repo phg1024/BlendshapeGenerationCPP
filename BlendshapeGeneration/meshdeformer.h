@@ -1,6 +1,6 @@
 #pragma once
 #include "common.h"
-#include "basicmesh.h"
+#include <MultilinearReconstruction/basicmesh.h>
 #include "pointcloud.h"
 #include "sparsematrix.h"
 
@@ -21,13 +21,13 @@ public:
   void setSource(const BasicMesh &src) { S = src; }
   void setLandmarks(const vector<int> &lms) { landmarks = lms; }
   BasicMesh deformWithMesh(const BasicMesh &T, const PointCloud &lm_points, int itmax = 10);
-  BasicMesh deformWithPoints(const PointCloud &P, const PointCloud &lm_points, int itmax = 10);
+  BasicMesh deformWithPoints(const MatrixX3d &P, const PointCloud &lm_points, int itmax = 10);
 
 protected:
-  vector<ICPCorrespondence> findClosestPoints_tree(const PointCloud &P, const BasicMesh &mesh);
-  vector<ICPCorrespondence> findClosestPoints_bruteforce(const PointCloud &P, const BasicMesh &mesh);
+  vector<ICPCorrespondence> findClosestPoints_tree(const MatrixX3d &P, const BasicMesh &mesh);
+  vector<ICPCorrespondence> findClosestPoints_bruteforce(const MatrixX3d &P, const BasicMesh &mesh);
   ICPCorrespondence findClosestPoint_triangle(double px, double py, double pz,
-                                              const double *v0, const double *v1, const double *v2);
+                                              const Vector3d& v0, const Vector3d& v1, const Vector3d& v2);
 
 private:
   BasicMesh S;

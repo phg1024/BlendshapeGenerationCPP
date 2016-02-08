@@ -1,5 +1,5 @@
 #include "meshtransferer.h"
-#include "utils.h"
+#include "triangle_gradient.h"
 #include "sparsematrix.h"
 #include "densematrix.h"
 
@@ -32,7 +32,7 @@ BasicMesh MeshTransferer::transfer(const BasicMesh &S1)
     throw "S0 or T0 not set.";
   }
   // compute the deformation gradients of S1
-  int nfaces = S1.faces.nrow;
+  int nfaces = S1.NumFaces();
   vector<PhGUtils::Matrix3x3d> S1grad(nfaces);
 
   for(int j=0;j<nfaces;++j) {
@@ -54,8 +54,8 @@ BasicMesh MeshTransferer::transfer(const vector<PhGUtils::Matrix3x3d> &S1grad)
   auto &S = S1grad;
   auto &T = T0grad;
 
-  int nfaces = S0.faces.nrow;
-  int nverts = S0.verts.nrow;
+  int nfaces = S0.NumFaces();
+  int nverts = S0.NumVertices();
 
   // assemble sparse matrix A
   int nrowsA = nfaces * 3;
@@ -79,7 +79,7 @@ BasicMesh MeshTransferer::transfer(const vector<PhGUtils::Matrix3x3d> &S1grad)
      * Aj = reshape(repmat(S0.faces', 3, 1), 1, nfaces*9)
      * Av = reshape(cell2mat(T)', 1, nfaces*9)
      */
-    int *f = S0.faces.rowptr(i);
+    auto f = S0.face(i);
 
     auto Ti = T[i];
 
@@ -120,7 +120,7 @@ BasicMesh MeshTransferer::transfer(const vector<PhGUtils::Matrix3x3d> &S1grad)
   }
   for(int i=0;i<3;++i) {
     for(int j=0, joffset=nrowsA;j<nsv;++j,++joffset) {
-      auto vj = T0.verts.rowptr(stationary_vertices[j]);
+      auto vj = T0.vertex(stationary_vertices[j]);
       c(joffset, i) = vj[i];
     }
   }
@@ -135,7 +135,7 @@ BasicMesh MeshTransferer::transfer(const vector<PhGUtils::Matrix3x3d> &S1grad)
   for(int i=0;i<nrowsA;++i) {
     int fidx = i/3;
     for(int j=Gtp[i];j<Gtp[i+1];++j) {
-      Gtx[j] *= Ds(fidx);
+      Gtx[j] *= Ds[fidx];
     }
   }
 
@@ -159,9 +159,7 @@ BasicMesh MeshTransferer::transfer(const vector<PhGUtils::Matrix3x3d> &S1grad)
   // change the vertices with x
   double *Vx = (double*)x->x;
   for(int i=0;i<nverts;++i) {
-    Td.verts(i, 0) = Vx[i];
-    Td.verts(i, 1) = Vx[i+nverts];
-    Td.verts(i, 2) = Vx[i+nverts*2];
+    Td.set_vertex(i, Vector3d(Vx[i], Vx[i+nverts], Vx[i+nverts*2]));
   }
 
   // release memory
@@ -177,7 +175,7 @@ BasicMesh MeshTransferer::transfer(const vector<PhGUtils::Matrix3x3d> &S1grad)
 
 void MeshTransferer::computeS0grad()
 {
-  int nfaces = S0.faces.nrow;
+  int nfaces = S0.NumFaces();
   S0grad.resize(nfaces);
   Ds.resize(nfaces);
 
@@ -185,13 +183,13 @@ void MeshTransferer::computeS0grad()
     // assign the reshaped gradient to the j-th row of Sgrad[i]
     auto S0ij_d = triangleGradient2(S0, j);
     S0grad[j] = S0ij_d.first;
-    Ds(j) = S0ij_d.second;
+    Ds[j] = S0ij_d.second;
   }
 }
 
 void MeshTransferer::computeT0grad()
 {
-  int nfaces = T0.faces.nrow;
+  int nfaces = T0.NumFaces();
   T0grad.resize(nfaces);
 
   for(int j=0;j<nfaces;++j) {

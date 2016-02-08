@@ -1,6 +1,21 @@
 #include "blendshapegeneration.h"
 #include <QFileDialog>
 
+#include <CGAL/Simple_cartesian.h>
+#include <CGAL/AABB_tree.h>
+#include <CGAL/AABB_traits.h>
+#include <CGAL/AABB_triangle_primitive.h>
+
+typedef CGAL::Simple_cartesian<double> K;
+typedef K::FT FT;
+typedef K::Line_3 Line;
+typedef K::Point_3 Point;
+typedef K::Triangle_3 Triangle;
+typedef std::vector<Triangle>::iterator Iterator;
+typedef CGAL::AABB_triangle_primitive<K, Iterator> Primitive;
+typedef CGAL::AABB_traits<K, Primitive> AABB_triangle_traits;
+typedef CGAL::AABB_tree<AABB_triangle_traits> Tree;
+
 BlendshapeVisualizer::BlendshapeVisualizer(QWidget *parent):
   GL3DCanvas(parent)
 {
@@ -15,15 +30,15 @@ BlendshapeVisualizer::~BlendshapeVisualizer()
 
 void BlendshapeVisualizer::loadMesh(const string &filename)
 {
-  mesh.load(filename);
-  mesh.computeNormals();
+  mesh.LoadOBJMesh(filename);
+  mesh.ComputeNormals();
   computeDistance();
   repaint();
 }
 
 void BlendshapeVisualizer::loadReferenceMesh(const string &filename)
 {
-  refmesh.load(filename);
+  refmesh.LoadOBJMesh(filename);
   computeDistance();
   repaint();
 }
@@ -35,8 +50,8 @@ void BlendshapeVisualizer::paintGL()
   glEnable(GL_DEPTH_TEST);
 
   enableLighting();
-  if( mesh.faces.nrow > 0 ) {
-    if( refmesh.faces.nrow > 0 ) drawMeshWithColor(mesh);
+  if( mesh.NumFaces() > 0 ) {
+    if( refmesh.NumFaces() > 0 ) drawMeshWithColor(mesh);
     else drawMesh(mesh);
   }
   disableLighting();
@@ -142,15 +157,16 @@ void BlendshapeVisualizer::disableLighting()
 
 void BlendshapeVisualizer::computeDistance()
 {
-  if( refmesh.faces.nrow <= 0 ) return;
+  if( refmesh.NumFaces() <= 0 ) return;
 
-  int nfaces = mesh.faces.nrow;
+  int nfaces = mesh.NumFaces();
 
   std::vector<Triangle> triangles;
   triangles.reserve(nfaces);
   for(int i=0,ioffset=0;i<nfaces;++i) {
-    int v1 = refmesh.faces(ioffset++), v2 = refmesh.faces(ioffset++), v3 = refmesh.faces(ioffset++);
-    auto p1 = refmesh.verts.rowptr(v1), p2 = refmesh.verts.rowptr(v2), p3 = refmesh.verts.rowptr(v3);
+    auto face_i = refmesh.face(i);
+    int v1 = face_i[0], v2 = face_i[1], v3 = face_i[2];
+    auto p1 = refmesh.vertex(v1), p2 = refmesh.vertex(v2), p3 = refmesh.vertex(v3);
     Point a(p1[0], p1[1], p1[2]);
     Point b(p2[0], p2[1], p2[2]);
     Point c(p3[0], p3[1], p3[2]);
@@ -160,11 +176,12 @@ void BlendshapeVisualizer::computeDistance()
 
   Tree tree(triangles.begin(), triangles.end());
 
-  dists.resize(mesh.verts.nrow);
-  for(int i=0;i<mesh.verts.nrow;++i) {
-    double px = mesh.verts(i, 0),
-           py = mesh.verts(i, 1),
-           pz = mesh.verts(i, 2);
+  dists.resize(mesh.NumVertices());
+  for(int i=0;i<mesh.NumVertices();++i) {
+    auto point_i = mesh.vertex(i);
+    double px = point_i[0],
+           py = point_i[1],
+           pz = point_i[2];
     Tree::Point_and_primitive_id bestHit = tree.closest_point_and_primitive(Point(px, py, pz));
     double qx = bestHit.first.x(),
            qy = bestHit.first.y(),
@@ -179,12 +196,15 @@ void BlendshapeVisualizer::drawMesh(const BasicMesh &m)
 {
   glColor4f(0.75, 0.75, 0.75, 1.0);
   glBegin(GL_TRIANGLES);
-  for(int i=0;i<m.faces.nrow;++i) {
-    int *v = m.faces.rowptr(i);
-    glNormal3dv(m.norms.rowptr(i));
-    glVertex3dv(m.verts.rowptr(v[0]));
-    glVertex3dv(m.verts.rowptr(v[1]));
-    glVertex3dv(m.verts.rowptr(v[2]));
+  for(int i=0;i<m.NumFaces();++i) {
+    auto face_i = m.face(i);
+    int v1 = face_i[0], v2 = face_i[1], v3 = face_i[2];
+    auto norm_i = m.normal(i);
+    glNormal3d(norm_i[0], norm_i[1], norm_i[2]);
+    auto p1 = m.vertex(v1), p2 = m.vertex(v2), p3 = m.vertex(v3);
+    glVertex3d(p1[0], p1[1], p1[2]);
+    glVertex3d(p2[0], p2[1], p2[2]);
+    glVertex3d(p3[0], p3[1], p3[2]);
   }
   glEnd();
 }
@@ -196,27 +216,31 @@ void BlendshapeVisualizer::drawMeshWithColor(const BasicMesh &m)
 
   glColor4f(0.75, 0.75, 0.75, 1.0);
   glBegin(GL_TRIANGLES);
-  for(int i=0;i<m.faces.nrow;++i) {
-    int *v = m.faces.rowptr(i);
-    glNormal3dv(m.norms.rowptr(i));
+  for(int i=0;i<m.NumFaces();++i) {
+    auto face_i = m.face(i);
+    int v1 = face_i[0], v2 = face_i[1], v3 = face_i[2];
+    auto norm_i = m.normal(i);
+    glNormal3d(norm_i[0], norm_i[1], norm_i[2]);
 
-    double hval0 = 1.0 - max(min((dists[v[0]]-minVal)/(maxVal-minVal)/0.67, 1.0), 0.0);
+    auto p1 = m.vertex(v1), p2 = m.vertex(v2), p3 = m.vertex(v3);
+
+    double hval0 = 1.0 - max(min((dists[face_i[0]]-minVal)/(maxVal-minVal)/0.67, 1.0), 0.0);
     QColor c0 = QColor::fromHsvF(hval0*0.67, 1.0, 1.0);
     float colors0[4] = {c0.redF(), c0.greenF(), c0.blueF(), 1.0};
     glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, colors0);
-    glVertex3dv(m.verts.rowptr(v[0]));
+    glVertex3d(p1[0], p1[1], p1[2]);
 
-    double hval1 = 1.0 - max(min((dists[v[1]]-minVal)/(maxVal-minVal)/0.67, 1.0), 0.0);
+    double hval1 = 1.0 - max(min((dists[face_i[1]]-minVal)/(maxVal-minVal)/0.67, 1.0), 0.0);
     QColor c1 = QColor::fromHsvF(hval1*0.67, 1.0, 1.0);
     float colors1[4] = {c1.redF(), c1.greenF(), c1.blueF(), 1.0};
     glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, colors1);
-    glVertex3dv(m.verts.rowptr(v[1]));
+    glVertex3d(p2[0], p2[1], p2[2]);
 
-    double hval2 = 1.0 - max(min((dists[v[2]]-minVal)/(maxVal-minVal)/0.67, 1.0), 0.0);
+    double hval2 = 1.0 - max(min((dists[face_i[2]]-minVal)/(maxVal-minVal)/0.67, 1.0), 0.0);
     QColor c2 = QColor::fromHsvF(hval2*0.67, 1.0, 1.0);
     float colors2[4] = {c2.redF(), c2.greenF(), c2.blueF(), 1.0};
     glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, colors2);
-    glVertex3dv(m.verts.rowptr(v[2]));
+    glVertex3d(p3[0], p3[1], p3[2]);
   }
   glEnd();
 }

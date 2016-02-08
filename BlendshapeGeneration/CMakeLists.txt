@@ -85,7 +85,6 @@ add_executable(BlendshapeGeneration main.cpp
                       densevector.cpp
                       densematrix.cpp
                       sparsematrix.cpp
-                      basicmesh.cpp
                       meshdeformer.cpp
                       meshtransferer.cpp
                       pointcloud.cpp)
@@ -96,5 +95,9 @@ target_link_libraries(BlendshapeGeneration
                       Qt5::OpenGL
                       CGAL
                       ${MKLLIBS}
-                      ${PhGLib})
+                      ${PhGLib}
+                      basicmesh)
+
 link_directories(MultilinearReconstruction)
+
+add_subdirectory(MultilinearReconstruction)

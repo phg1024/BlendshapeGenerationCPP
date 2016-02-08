@@ -5,15 +5,38 @@
 
 #include "testcases.h"
 
+#include <MultilinearReconstruction/basicmesh.h>
+#include <MultilinearReconstruction/costfunctions.h>
+#include <MultilinearReconstruction/ioutilities.h>
+#include <MultilinearReconstruction/multilinearmodel.h>
+#include <MultilinearReconstruction/parameters.h>
+#include <MultilinearReconstruction/utils.hpp>
+
 #include "densematrix.h"
 #include "densevector.h"
-#include "basicmesh.h"
 #include "meshdeformer.h"
 #include "meshtransferer.h"
 #include "cereswrapper.h"
 
 #include "Geometry/matrix.hpp"
-#include "utils.h"
+#include "triangle_gradient.h"
+
+#include "boost/filesystem/operations.hpp"
+#include "boost/filesystem/path.hpp"
+#include <boost/timer/timer.hpp>
+
+namespace fs = boost::filesystem;
+
+#if 0
+struct ImageBundle {
+  ImageBundle() {}
+  ImageBundle(const QImage& image, const vector<Constraint2D>& points, const ReconstructionResult& params)
+    : image(image), points(points), params(params) {}
+  QImage image;
+  vector<Constraint2D> points;
+  ReconstructionResult params;
+};
+#endif
 
 vector<int> loadLandmarks(const string &filename) {
   const int npts = 73;
@@ -36,7 +59,7 @@ void laplacianDeformation() {
 #endif
 
   BasicMesh m;
-  m.load(datapath + "Tester_1/Blendshape/shape_0.obj");
+  m.LoadOBJMesh(datapath + "Tester_1/Blendshape/shape_0.obj");
 
   MeshDeformer deformer;
   deformer.setSource(m);
@@ -46,13 +69,19 @@ void laplacianDeformation() {
 
   int objidx = 1;
   BasicMesh T;
-  T.load(datapath + "Tester_1/TrainingPose/pose_" + to_string(objidx) + ".obj");
+  T.LoadOBJMesh(datapath + "Tester_1/TrainingPose/pose_" + to_string(objidx) + ".obj");
 
   PointCloud lm_points;
-  lm_points.points = T.verts.row(landmarks);
+  lm_points.points.resize(landmarks.size(), 3);
+  for(int i=0;i<landmarks.size();++i) {
+    auto vi = T.vertex(landmarks[i]);
+    lm_points.points(i, 0) = vi[0];
+    lm_points.points(i, 1) = vi[1];
+    lm_points.points(i, 2) = vi[2];
+  }
   BasicMesh D = deformer.deformWithMesh(T, lm_points, 20);
 
-  D.write("deformed" + to_string(objidx) + ".obj");
+  D.Write("deformed" + to_string(objidx) + ".obj");
 }
 
 
@@ -66,10 +95,10 @@ void deformationTransfer() {
 #endif
 
   BasicMesh S0;
-  S0.load(datapath + "Tester_1/Blendshape/shape_0.obj");
+  S0.LoadOBJMesh(datapath + "Tester_1/Blendshape/shape_0.obj");
 
   BasicMesh T0;
-  T0.load(datapath + "Tester_106/Blendshape/shape_0.obj");
+  T0.LoadOBJMesh(datapath + "Tester_106/Blendshape/shape_0.obj");
 
   // use deformation transfer to create an initial set of blendshapes
   MeshTransferer transferer;
@@ -78,20 +107,20 @@ void deformationTransfer() {
   transferer.setTarget(T0); // set target and compute deformation gradient
 
   // find the stationary set of verteces
-  vector<int> stationary_indices = T0.filterVertices([=](double *v) {
+  vector<int> stationary_indices = T0.filterVertices([=](const Vector3d& v) {
     return v[2] <= -0.45;
   });
   transferer.setStationaryVertices(stationary_indices);
 
   BasicMesh S;
-  S.load(datapath + "Tester_1/Blendshape/shape_22.obj");
+  S.LoadOBJMesh(datapath + "Tester_1/Blendshape/shape_22.obj");
 
   BasicMesh T = transferer.transfer(S);
-  T.write("transferred.obj");
+  T.Write("transferred.obj");
 }
 
 struct PointResidual {
-  PointResidual(double x, double y, double z, int idx, const vector<Array2D<double>> &dB)
+  PointResidual(double x, double y, double z, int idx, const vector<MatrixX3d> &dB)
     : mx(x), my(y), mz(z), vidx(idx), dB(dB) {}
 
   template <typename T>
@@ -101,7 +130,7 @@ struct PointResidual {
     int nshapes = dB.size();
     // compute
     for(int i=0;i<nshapes;++i) {
-      double *dBi_ptr = dB[i].rowptr(vidx);
+      auto dBi_ptr = dB[i].row(vidx);
       p[0] += T(dBi_ptr[0]) * alpha[i];
       p[1] += T(dBi_ptr[1]) * alpha[i];
       p[2] += T(dBi_ptr[2]) * alpha[i];
@@ -113,7 +142,7 @@ struct PointResidual {
 private:
   const double mx, my, mz;
   const int vidx;
-  const vector<Array2D<double>> &dB;
+  const vector<MatrixX3d> &dB;
 };
 
 struct PriorResidue {
@@ -131,7 +160,7 @@ private:
 
 Array1D<double> estimateWeights(const BasicMesh &S,
                                 const BasicMesh &B0,
-                                const vector<Array2D<double>> &dB,
+                                const vector<MatrixX3d> &dB,
                                 const Array1D<double> &w0,  // init value
                                 const Array1D<double> &wp,  // prior
                                 double w_prior,
@@ -141,10 +170,10 @@ Array1D<double> estimateWeights(const BasicMesh &S,
   Problem problem;
 
   // add all constraints
-  int nverts = S.verts.nrow;
+  int nverts = S.NumVertices();
   for(int i=0;i<nverts;++i) {
-    double *vS = S.verts.rowptr(i);
-    double *vB0 = B0.verts.rowptr(i);
+    auto vS = S.vertex(i);
+    auto vB0 = B0.vertex(i);
     double dx = vS[0] - vB0[0];
     double dy = vS[1] - vB0[1];
     double dz = vS[2] - vB0[2];
@@ -186,8 +215,8 @@ vector<BasicMesh> refineBlendShapes(const vector<BasicMesh> &S,
                                           const vector<int> stationary_indices) {
   const BasicMesh &B0 = B[0];
 
-  int nfaces = B0.faces.nrow;
-  int nverts = B0.verts.nrow;
+  int nfaces = B0.NumFaces();
+  int nverts = B0.NumVertices();
 
   int nposes = S.size();
   int nshapes = B.size() - 1;
@@ -212,12 +241,12 @@ vector<BasicMesh> refineBlendShapes(const vector<BasicMesh> &S,
     }
   }
 
-  cout << BLUE << "computing perface gradients." << RESET << endl;
+  ColorStream(ColorOutput::Blue) << "computing perface gradients.";
   vector<DenseMatrix> M(nfaces);
 
 #pragma omp parallel for
   for(int j=0;j<nfaces;++j) {
-    if( j % 5000 == 0 ) cout << RED << j << " faces processed." << RESET << endl;
+    if( j % 5000 == 0 ) ColorStream(ColorOutput::Red) << j << " faces processed.";
     DenseMatrix A = A0;
     DenseMatrix b(nrows, 9);
 
@@ -250,7 +279,7 @@ vector<BasicMesh> refineBlendShapes(const vector<BasicMesh> &S,
   }
 
   // reconstruct the blendshapes now
-  cout << BLUE << "reconstructing blendshapes." << RESET << endl;
+  ColorStream(ColorOutput::Blue) << "reconstructing blendshapes.";
   MeshTransferer transferer;
   transferer.setSource(B0);
   transferer.setTarget(B0);
@@ -258,7 +287,7 @@ vector<BasicMesh> refineBlendShapes(const vector<BasicMesh> &S,
 
   vector<BasicMesh> B_new(nshapes);
   for(int i=0;i<nshapes;++i) {
-    cout << GREEN << "reconstructing blendshapes " << i << RESET << endl;
+    ColorStream(ColorOutput::Green)<< "reconstructing blendshapes " << i;
     vector<PhGUtils::Matrix3x3d> Bgrad_i(nfaces);
     for(int j=0;j<nfaces;++j) {
       auto &Mj = M[j];
@@ -294,8 +323,8 @@ void blendShapeGeneration() {
 
   // load the template blendshapes and ground truth blendshapes
   for(int i=0;i<=nshapes;++i) {
-    A[i].load(A_path + "shape_" + to_string(i) + ".obj");
-    B_ref[i].load(B_path + "shape_" + to_string(i) + ".obj");
+    A[i].LoadOBJMesh(A_path + "shape_" + to_string(i) + ".obj");
+    B_ref[i].LoadOBJMesh(B_path + "shape_" + to_string(i) + ".obj");
   }
 
   B[0] = B_ref[0];
@@ -306,7 +335,7 @@ void blendShapeGeneration() {
 
   // load the training poses
   for(int i=0;i<nposes;++i){
-    S0[i].load(S_path + "pose_" + to_string(i) + ".obj");
+    S0[i].LoadOBJMesh(S_path + "pose_" + to_string(i) + ".obj");
   }
 
   const bool synthesizeTrainingPoses = true;
@@ -316,9 +345,9 @@ void blendShapeGeneration() {
     // the estimated weights to generate a new set of training poses
 
     // compute the delta shapes of the renference shapes
-    vector<Array2D<double>> dB_ref(nshapes);
+    vector<MatrixX3d> dB_ref(nshapes);
     for(int i=0;i<nshapes;++i) {
-      dB_ref[i] = B_ref[i+1].verts - B0.verts;
+      dB_ref[i] = B_ref[i+1].vertices() - B0.vertices();
     }
 
     // estimate the weights of the training poses using the ground truth blendshapes
@@ -337,9 +366,9 @@ void blendShapeGeneration() {
       // make a copy of B0
       auto Ti = B0;
       for(int j=0;j<nshapes;++j) {
-        Ti.verts += alpha_ref[i](j) * dB_ref[j];
+        Ti.vertices() += alpha_ref[i](j) * dB_ref[j];
       }
-      Ti.write("Sgen_"+to_string(i)+".obj");
+      Ti.Write("Sgen_"+to_string(i)+".obj");
       //Ti = alignMesh(Ti, S0{i});
       //S_error(iters, i) = sqrt(max(sum((Ti.vertices-S0{i}.vertices).^2, 2)));
 
@@ -355,10 +384,10 @@ void blendShapeGeneration() {
   }
 
   // create point clouds from S0
-  vector<PointCloud> P(nposes);
+  vector<MatrixX3d> P(nposes);
   for(int i=0;i<nposes;++i) {
     P[i] = S0[i].samplePoints(4, -0.10);
-    P[i].write("P_" + to_string(i) + ".txt");
+    //P[i].Write("P_" + to_string(i) + ".txt");
   }
 
   vector<BasicMesh> S(nposes);  // meshes reconstructed from point clouds
@@ -369,20 +398,28 @@ void blendShapeGeneration() {
   deformer.setLandmarks(landmarks);
   for(int i=0;i<nposes;++i) {
     PointCloud lm_points;
-    lm_points.points = S0[i].verts.row(landmarks);
+
+    lm_points.points.resize(landmarks.size(), 3);
+    for(int j=0;j<landmarks.size();++j) {
+      auto vj = S0[i].vertex(landmarks[j]);
+      lm_points.points(j, 0) = vj[0];
+      lm_points.points(j, 1) = vj[1];
+      lm_points.points(j, 2) = vj[2];
+    }
+
     S[i] = deformer.deformWithPoints(P[i], lm_points, 5);
-    S[i].write("Sinit_" + to_string(i) + ".obj");
+    S[i].Write("Sinit_" + to_string(i) + ".obj");
   }
   auto S_init = S;
   cout << "initial fitted meshes computed." << endl;
 
   // find the stationary set of verteces
-  vector<int> stationary_indices = B0.filterVertices([=](double *v) {
+  vector<int> stationary_indices = B0.filterVertices([=](const Vector3d& v) {
     return v[2] <= -0.45;
   });
   cout << "stationary vertices = " << stationary_indices.size() << endl;
 
-  cout << BLUE << "creating initial set of blendshapes using deformation transfer." << RESET << endl;
+  ColorStream(ColorOutput::Blue) << "creating initial set of blendshapes using deformation transfer.";
   // use deformation transfer to create an initial set of blendshapes
   MeshTransferer transferer;
   transferer.setSource(A0); // set source and compute deformation gradient
@@ -390,16 +427,16 @@ void blendShapeGeneration() {
   transferer.setStationaryVertices(stationary_indices);
 
   for(int i=1;i<=nshapes;++i) {
-    cout << GREEN << "creating shape " << i << RESET << endl;
+    ColorStream(ColorOutput::Green)<< "creating shape " << i;
     B[i] = transferer.transfer(A[i]);
-    B[i].write("Binit_" + to_string(i) + ".obj");
+    B[i].Write("Binit_" + to_string(i) + ".obj");
   }
   auto B_init = B;
-  cout << BLUE << "initial set of blendshapes created." << RESET << endl;
+  ColorStream(ColorOutput::Blue)<< "initial set of blendshapes created.";
 
   // compute deformation gradient prior from the template mesh
-  cout << BLUE << "computing priors." << RESET << endl;
-  int nfaces = A0.faces.nrow;
+  ColorStream(ColorOutput::Blue)<< "computing priors.";
+  int nfaces = A0.NumFaces();
 
   Array2D<double> MB0 = Array2D<double>::zeros(nfaces, 9);
   Array2D<double> MA0 = Array2D<double>::zeros(nfaces, 9);
@@ -449,12 +486,12 @@ void blendShapeGeneration() {
   fwprior<<w_prior;
   fwprior.close();
 
-  cout << BLUE << "priors computed." << RESET << endl;
+  ColorStream(ColorOutput::Blue)<< "priors computed.";
 
   // compute the delta shapes
-  vector<Array2D<double>> dB(nshapes);
+  vector<MatrixX3d> dB(nshapes);
   for(int i=0;i<nshapes;++i) {
-    dB[i] = B[i+1].verts - B0.verts;
+    dB[i] = B[i+1].vertices() - B0.vertices();
   }
 
   // estimate initial set of blendshape weights
@@ -468,7 +505,7 @@ void blendShapeGeneration() {
   }
   auto alpha_init = alpha;
 
-  cout << RED << "initialization done." << RESET << endl;
+  ColorStream(ColorOutput::Red)<< "initialization done.";
 
   // reset the parameters
   B = B_init;
@@ -541,18 +578,18 @@ void blendShapeGeneration() {
     DenseVector B_norm(nshapes);
     double B_norm_max = 0;
     for(int i=0;i<nshapes;++i) {
-      auto Bdiff = B[i+1].verts - B_new[i].verts;
-      B_norm(i) = cblas_dnrm2(Bdiff.nrow*Bdiff.ncol, Bdiff.data.get(), 1);
+      auto Bdiff = B[i+1].vertices() - B_new[i].vertices();
+      B_norm(i) = Bdiff.norm();
       B_norm_max = max(B_norm_max, B_norm(i));
-      B[i+1].verts = B_new[i].verts;
+      B[i+1].vertices() = B_new[i].vertices();
       //B{i+1} = alignMesh(B{i+1}, B{1}, stationary_indices);
     }
-    cout << GREEN << "Bnorm = " << B_norm << RESET << endl;
+    ColorStream(ColorOutput::Green)<< "Bnorm = " << B_norm;
     converged = converged & (B_norm_max < B_THRES);
 
     // update delta shapes
     for(int i=0;i<nshapes;++i) {
-      dB[i] = B[i+1].verts - B0.verts;
+      dB[i] = B[i+1].vertices() - B0.vertices();
     }
 
     // update weights
@@ -566,14 +603,14 @@ void blendShapeGeneration() {
       alpha_norm_max = max(alpha_norm_max, alpha_norm(i));
     }
     alpha = alpha_new;
-    cout << GREEN << "norm(alpha) = " << alpha_norm << RESET << endl;
+    ColorStream(ColorOutput::Green)<< "norm(alpha) = " << alpha_norm;
     converged = converged & (alpha_norm_max < ALPHA_THRES);
 
     for(int i=0;i<nposes;++i) {
       // make a copy of B0
       auto Ti = B0;
       for(int j=0;j<nshapes;++j) {
-        Ti.verts += alpha[i](j) * dB[j];
+        Ti.vertices() += alpha[i](j) * dB[j];
       }
       //Ti = alignMesh(Ti, S0{i});
       //S_error(iters, i) = sqrt(max(sum((Ti.vertices-S0{i}.vertices).^2, 2)));
@@ -591,7 +628,13 @@ void blendShapeGeneration() {
       deformer.setSource(S[i]);
       deformer.setLandmarks(landmarks);
       PointCloud lm_points;
-      lm_points.points = S0[i].verts.row(landmarks);
+      lm_points.points.resize(landmarks.size(), 3);
+      for(int j=0;j<landmarks.size();++j) {
+        auto vj = S0[i].vertex(landmarks[j]);
+        lm_points.points(j, 0) = vj[0];
+        lm_points.points(j, 1) = vj[1];
+        lm_points.points(j, 2) = vj[2];
+      }
       S[i] = deformer.deformWithPoints(P[i], lm_points, 5);
     }
 
@@ -609,12 +652,12 @@ void blendShapeGeneration() {
 
   // write out the blendshapes
   for(int i=0;i<nshapes+1;++i) {
-    B[i].write("B_"+to_string(i)+".obj");
+    B[i].Write("B_"+to_string(i)+".obj");
   }
 
   // write out the blendshapes
   for(int i=0;i<nposes;++i) {
-    S[i].write("S_"+to_string(i)+".obj");
+    S[i].Write("S_"+to_string(i)+".obj");
   }
 }
 

@@ -5,7 +5,7 @@
 #include "ui_blendshapegeneration.h"
 
 #include "OpenGL/gl3dcanvas.h"
-#include "basicmesh.h"
+#include <MultilinearReconstruction/basicmesh.h>
 
 class BlendshapeVisualizer : public GL3DCanvas {
   Q_OBJECT
