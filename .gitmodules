@@ -1,0 +1,3 @@
+[submodule "BlendshapeGeneration/MultilinearReconstruction"]
+	path = BlendshapeGeneration/MultilinearReconstruction
+	url = ../MultilinearReconstruction.git
