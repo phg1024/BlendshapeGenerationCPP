@@ -617,7 +617,7 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
   // main deformation loop
   int iters = 0;
 
-  double ratio_data2icp = 10.0*lm_points.points.nrow / (double) S.NumVertices();
+  double ratio_data2icp = max(0.001, 10.0*lm_points.points.nrow / (double) S.NumVertices());
   //cout << ratio_data2icp << endl;
   double w_icp = 0, w_icp_step = ratio_data2icp;
   double w_data = 10.0, w_data_step = w_data/itmax;
@@ -664,7 +664,7 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
     // add landmarks terms
     int ndata = landmarks.size();
     nterms += ndata * 3;
-    nrows += ndata*3;
+    nrows += ndata * 3;
 
     // add prior terms
     int nprior = S.NumVertices();
@@ -864,7 +864,7 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
 
     //cout << "Solving (M'*M)\(M'*b) ..." << endl;
     // solve (M'*M)\(M'*b)
-    // solution vector    
+    // solution vector
 #if ANALYZE_ONCE
     if( L == nullptr )
       L = cholmod_analyze(MtM, global::cm);

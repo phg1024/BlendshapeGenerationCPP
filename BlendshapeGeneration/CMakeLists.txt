@@ -96,7 +96,8 @@ target_link_libraries(BlendshapeGeneration
                       CGAL
                       ${MKLLIBS}
                       ${PhGLib}
-                      basicmesh)
+                      basicmesh
+                      multilinearmodel)
 
 link_directories(MultilinearReconstruction)
 

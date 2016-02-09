@@ -12,8 +12,6 @@
 #include <MultilinearReconstruction/parameters.h>
 #include <MultilinearReconstruction/utils.hpp>
 
-#include "densematrix.h"
-#include "densevector.h"
 #include "meshdeformer.h"
 #include "meshtransferer.h"
 #include "cereswrapper.h"
@@ -84,6 +82,50 @@ void laplacianDeformation() {
   D.Write("deformed" + to_string(objidx) + ".obj");
 }
 
+void laplacianDeformation_pointcloud() {
+    const string datapath("/home/phg/Data/FaceWarehouse_Data_0/");
+    const string model_filename("/home/phg/Data/Multilinear/blendshape_core.tensor");
+    const string res_filename("/home/phg/Data/InternetRecon/yaoming/4.jpg.res");
+    const string pointcloud_filename("/home/phg/Data/InternetRecon/yaoming/SFS/point_cloud_opt4.txt");
+
+    // Update the mesh with the blendshape weights
+    MultilinearModel model(model_filename);
+    auto recon_results = LoadReconstructionResult(res_filename);
+    model.ApplyWeights(recon_results.params_model.Wid, recon_results.params_model.Wexp);
+
+    BasicMesh m;
+    m.LoadOBJMesh(datapath + "Tester_1/Blendshape/shape_0.obj");
+    m.UpdateVertices(model.GetTM());
+    m.ComputeNormals();
+
+    m.Write("source.obj");
+
+    MeshDeformer deformer;
+    deformer.setSource(m);
+
+    vector<int> landmarks = loadLandmarks(datapath+"landmarks_74_new.txt");
+    //deformer.setLandmarks(landmarks);
+
+    ifstream fin(pointcloud_filename);
+    vector<Vector3d> points;
+    points.reserve(100000);
+    while(fin) {
+      double x, y, z;
+      fin >> x >> y >> z;
+      points.push_back(Vector3d(-x, -y, z));
+    }
+    MatrixXd P(points.size(), 3);
+    for(int i=0;i<points.size();++i) {
+      P.row(i) = points[i];
+    }
+
+    PointCloud lm_points;
+    lm_points.points.resize(0, 0);
+
+    BasicMesh D = deformer.deformWithPoints(P, lm_points, 20);
+
+    D.Write("deformed.obj");
+}
 
 void deformationTransfer() {
 #ifdef __APPLE__
@@ -233,7 +275,7 @@ vector<BasicMesh> refineBlendShapes(const vector<BasicMesh> &S,
 
   int nrows = nposes + nshapes;
   int ncols = nshapes;
-  DenseMatrix A0(nrows, ncols);
+  MatrixXd A0(nrows, ncols);
   // the upper part of A is always the alpha matrix
   for(int i=0;i<nposes;++i) {
     for(int j=0;j<ncols;++j) {
@@ -242,13 +284,13 @@ vector<BasicMesh> refineBlendShapes(const vector<BasicMesh> &S,
   }
 
   ColorStream(ColorOutput::Blue) << "computing perface gradients.";
-  vector<DenseMatrix> M(nfaces);
+  vector<MatrixXd> M(nfaces);
 
 #pragma omp parallel for
   for(int j=0;j<nfaces;++j) {
     if( j % 5000 == 0 ) ColorStream(ColorOutput::Red) << j << " faces processed.";
-    DenseMatrix A = A0;
-    DenseMatrix b(nrows, 9);
+    MatrixXd A = A0;
+    MatrixXd b(nrows, 9);
 
     auto B0j_ptr = B0grad.rowptr(j);
     // upper part of b
@@ -272,10 +314,7 @@ vector<BasicMesh> refineBlendShapes(const vector<BasicMesh> &S,
     }
 
     // solve the equation A'A\A'b
-    DenseMatrix At = A.transposed();
-    DenseMatrix AtA = At * A;
-    DenseMatrix Atb = At * b;
-    M[j] = (AtA.inv()) * Atb;     // nshapes x 9 matrix
+    M[j] = (A.transpose() * A).ldlt().solve(A.transpose() * b);     // nshapes x 9 matrix
   }
 
   // reconstruct the blendshapes now
@@ -575,7 +614,7 @@ void blendShapeGeneration() {
     // B_new is a set of new blendshapes
     auto B_new = refineBlendShapes(S, Sgrad, B, alpha, beta, gamma, prior, w_prior, stationary_indices);
 
-    DenseVector B_norm(nshapes);
+    VectorXd B_norm(nshapes);
     double B_norm_max = 0;
     for(int i=0;i<nshapes;++i) {
       auto Bdiff = B[i+1].vertices() - B_new[i].vertices();
@@ -584,7 +623,7 @@ void blendShapeGeneration() {
       B[i+1].vertices() = B_new[i].vertices();
       //B{i+1} = alignMesh(B{i+1}, B{1}, stationary_indices);
     }
-    ColorStream(ColorOutput::Green)<< "Bnorm = " << B_norm;
+    ColorStream(ColorOutput::Green)<< "Bnorm = " << B_norm.transpose();
     converged = converged & (B_norm_max < B_THRES);
 
     // update delta shapes
@@ -593,7 +632,7 @@ void blendShapeGeneration() {
     }
 
     // update weights
-    DenseVector alpha_norm(nposes);
+    VectorXd alpha_norm(nposes);
     double alpha_norm_max = 0;
     vector<Array1D<double>> alpha_new(nposes);
     for(int i=0;i<nposes;++i) {
@@ -603,7 +642,7 @@ void blendShapeGeneration() {
       alpha_norm_max = max(alpha_norm_max, alpha_norm(i));
     }
     alpha = alpha_new;
-    ColorStream(ColorOutput::Green)<< "norm(alpha) = " << alpha_norm;
+    ColorStream(ColorOutput::Green)<< "norm(alpha) = " << alpha_norm.transpose();
     converged = converged & (alpha_norm_max < ALPHA_THRES);
 
     for(int i=0;i<nposes;++i) {
@@ -692,6 +731,9 @@ int main(int argc, char *argv[])
   }
   else if( option == "-l" ) {
     laplacianDeformation();
+  }
+  else if( option == "-lp" ) {
+    laplacianDeformation_pointcloud();
   }
   else if( option == "-b" ) {
     blendShapeGeneration();
