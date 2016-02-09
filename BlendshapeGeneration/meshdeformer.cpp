@@ -617,7 +617,7 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
   // main deformation loop
   int iters = 0;
 
-  double ratio_data2icp = max(0.001, 10.0*lm_points.points.nrow / (double) S.NumVertices());
+  double ratio_data2icp = max(0.1, 10.0*lm_points.points.nrow / (double) S.NumVertices());
   //cout << ratio_data2icp << endl;
   double w_icp = 0, w_icp_step = ratio_data2icp;
   double w_data = 10.0, w_data_step = w_data/itmax;

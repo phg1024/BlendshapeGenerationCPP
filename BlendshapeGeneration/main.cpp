@@ -86,7 +86,7 @@ void laplacianDeformation_pointcloud() {
     const string datapath("/home/phg/Data/FaceWarehouse_Data_0/");
     const string model_filename("/home/phg/Data/Multilinear/blendshape_core.tensor");
     const string res_filename("/home/phg/Data/InternetRecon/yaoming/4.jpg.res");
-    const string pointcloud_filename("/home/phg/Data/InternetRecon/yaoming/SFS/point_cloud_opt4.txt");
+    const string pointcloud_filename("/home/phg/Data/InternetRecon/yaoming/SFS/point_cloud_opt_raw4.txt");
 
     // Update the mesh with the blendshape weights
     MultilinearModel model(model_filename);
@@ -112,7 +112,7 @@ void laplacianDeformation_pointcloud() {
     while(fin) {
       double x, y, z;
       fin >> x >> y >> z;
-      points.push_back(Vector3d(-x, -y, z));
+      points.push_back(Vector3d(x, y, z));
     }
     MatrixXd P(points.size(), 3);
     for(int i=0;i<points.size();++i) {
