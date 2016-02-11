@@ -599,8 +599,8 @@ void blendShapeGeneration() {
   double eta_max = 1.0, eta_min = 0.1;
   int iters = 0;
   const int maxIters = 5;
-  DenseMatrix B_error = DenseMatrix::zeros(maxIters, nshapes);
-  DenseMatrix S_error = DenseMatrix::zeros(maxIters, nposes);
+  MatrixXd B_error = MatrixXd::Zero(maxIters, nshapes);
+  MatrixXd S_error = MatrixXd::Zero(maxIters, nposes);
   while( !converged && iters < maxIters ) {
     cout << "iteration " << iters << " ..." << endl;
     converged = true;
@@ -711,11 +711,7 @@ int main(int argc, char *argv[])
 {
   google::InitGoogleLogging(argv[0]);
 
-  global::initialize();
-
 #if RUN_TESTS
-  TestCases::testMatrix();
-  TestCases::testSaprseMatrix();
   TestCases::testCeres();
   return 0;
 #else
@@ -746,7 +742,6 @@ int main(int argc, char *argv[])
     return a.exec();
   }
 
-  global::finalize();
   return 0;
 #endif
 }

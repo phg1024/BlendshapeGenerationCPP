@@ -226,19 +226,19 @@ void BlendshapeVisualizer::drawMeshWithColor(const BasicMesh &m)
 
     double hval0 = 1.0 - max(min((dists[face_i[0]]-minVal)/(maxVal-minVal)/0.67, 1.0), 0.0);
     QColor c0 = QColor::fromHsvF(hval0*0.67, 1.0, 1.0);
-    float colors0[4] = {c0.redF(), c0.greenF(), c0.blueF(), 1.0};
+    float colors0[4] = {(float)c0.redF(), (float)c0.greenF(), (float)c0.blueF(), 1.0f};
     glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, colors0);
     glVertex3d(p1[0], p1[1], p1[2]);
 
     double hval1 = 1.0 - max(min((dists[face_i[1]]-minVal)/(maxVal-minVal)/0.67, 1.0), 0.0);
     QColor c1 = QColor::fromHsvF(hval1*0.67, 1.0, 1.0);
-    float colors1[4] = {c1.redF(), c1.greenF(), c1.blueF(), 1.0};
+    float colors1[4] = {(float)c1.redF(), (float)c1.greenF(), (float)c1.blueF(), 1.0f};
     glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, colors1);
     glVertex3d(p2[0], p2[1], p2[2]);
 
     double hval2 = 1.0 - max(min((dists[face_i[2]]-minVal)/(maxVal-minVal)/0.67, 1.0), 0.0);
     QColor c2 = QColor::fromHsvF(hval2*0.67, 1.0, 1.0);
-    float colors2[4] = {c2.redF(), c2.greenF(), c2.blueF(), 1.0};
+    float colors2[4] = {(float)c2.redF(), (float)c2.greenF(), (float)c2.blueF(), 1.0f};
     glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, colors2);
     glVertex3d(p3[0], p3[1], p3[2]);
   }
@@ -273,4 +273,3 @@ void BlendshapeGeneration::slot_loadReferenceMesh()
   QString filename = QFileDialog::getOpenFileName();
   canvas->loadReferenceMesh(filename.toStdString());
 }
-

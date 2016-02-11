@@ -52,27 +52,19 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
   }
 
   // compute delta_i
-  Array2D<double> delta(nverts, 3);
+  MatrixXd delta(nverts, 3);
   for (int i = 0; i < nverts; ++i) {
     auto& Ni = N[i];
-    double Si[3] = {0};
+
+    Vector3d Si(0, 0, 0);
     for (auto j : Ni) {
-      auto Vj = S.vertex(j);
-      Si[0] += Vj[0];
-      Si[1] += Vj[1];
-      Si[2] += Vj[2];
+      Si += S.vertex(j);
     }
 
-    auto Vi = S.vertex(i);
-
-    double invNi = 1.0 / Ni.size();
-    auto delta_i = delta.rowptr(i);
-    delta_i[0] = Vi[0] - Si[0] * invNi;
-    delta_i[1] = Vi[1] - Si[1] * invNi;
-    delta_i[2] = Vi[2] - Si[2] * invNi;
+    delta.row(i) = S.vertex(i) - Si / static_cast<double>(Ni.size());
   }
 
-  auto makeVMatrix = [&](double x, double y, double z) {
+  auto makeVMatrix = [](double x, double y, double z) {
     MatrixXd V = MatrixXd::Zero(3, 7);
     /*
      *     x   0  z -y 1 0 0
@@ -90,6 +82,12 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
     return V;
   };
 
+  vector<MatrixXd> Vs(nverts);
+  for(int i = 0; i < nverts; ++i) {
+    auto vert_i = S.vertex(i);
+    Vs[i] = makeVMatrix(vert_i[0], vert_i[1], vert_i[2]);
+  }
+
   // @TODO precompute all V matrices
   // compute A matrix
   vector<MatrixXd> A(nverts);
@@ -97,35 +95,18 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
     auto& Ni = N[i];
     A[i] = MatrixXd::Zero(3*(Ni.size()+1), 7);
 
-    int offset_i = i * 3;
     // set the vertex's terms
-    auto vert_i = S.vertex(i);
-    MatrixXd Vi = makeVMatrix(vert_i[0], vert_i[1], vert_i[2]);
-
-    // copy to A[i]
-    for (int c = 0; c < 7; ++c) {
-      for (int r = 0; r < 3; ++r) {
-        A[i](r, c) = Vi(r, c);
-      }
-    }
+    A[i].topRows(3) = Vs[i];
 
     // set the neighbor terms
     int roffset = 3;
     for (auto j : Ni) {
-      int offset_j = j * 3;
-      auto vert_j = S.vertex(j);
-      MatrixXd Vj = makeVMatrix(vert_j[0], vert_j[1], vert_j[2]);
-
-      for (int c = 0; c < 7; ++c) {
-        for (int r = 0; r < 3; ++r) {
-          A[i](r+roffset, c) = Vj(r, c);
-        }
-      }
+      A[i].middleRows(roffset, 3) = Vs[j];
       roffset += 3;
     }
   }
 
-  auto makeDMatrix = [&](double x, double y, double z) {
+  auto makeDMatrix = [](double x, double y, double z) {
     MatrixXd D = MatrixXd::Zero(3, 7);
     /*
      *     x   0  z -y 0 0 0
@@ -144,16 +125,21 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
   vector<MatrixXd> Tm(nverts);
   for (int i = 0; i < nverts; ++i) {
     int offset_i = i * 3;
-    MatrixXd Di = makeDMatrix(delta(offset_i), delta(offset_i+1), delta(offset_i+2));
+    MatrixXd Di = makeDMatrix(delta(i, 0), delta(i, 1), delta(i, 2));
     auto& Ai = A[i];
+    #if 0
     MatrixXd At = Ai.transpose();
     MatrixXd AtAi = At * Ai;
     //cout << AtAi << endl;
     MatrixXd invAtAi = AtAi.inverse();
     //cout << invAtAi << endl;
     Tm[i] = Di * (invAtAi * At);
+    #else
+    Tm[i] = Di * ((Ai.transpose() * Ai).inverse() * Ai.transpose());
+    #endif
     //cout << Tm[i] << endl;
   }
+  cout << "check point 1" << endl;
 
   BasicMesh D = S; // make a copy of the source mesh
 

@@ -1,5 +1,6 @@
 #include "testcases.h"
 
+#if 0
 void TestCases::testMatrix()
 {
   DenseMatrix A = DenseMatrix::random(5, 5);
@@ -41,6 +42,7 @@ void TestCases::testSaprseMatrix()
   for (int i = 0; i < b1.length(); ++i) cout << b1(i) << ' ';
   cout << endl;
 }
+#endif
 
 void TestCases::testCeres() {
 

@@ -81,10 +81,10 @@ link_libraries(${CERES_LIBRARIES})
 # Face shape from shading program
 add_executable(BlendshapeGeneration main.cpp
                       blendshapegeneration.cpp
-                      common.cpp
-                      densevector.cpp
-                      densematrix.cpp
-                      sparsematrix.cpp
+                      #common.cpp
+                      #densevector.cpp
+                      #densematrix.cpp
+                      #sparsematrix.cpp
                       meshdeformer.cpp
                       meshtransferer.cpp
                       pointcloud.cpp)

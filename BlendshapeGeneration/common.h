@@ -33,10 +33,3 @@ using boost::shared_ptr;
 using namespace std;
 
 #include "Utils/Timer.h"
-
-#include "cholmod.h"
-namespace global {
-    void initialize();
-    void finalize();
-    extern cholmod_common *cm;
-}
