@@ -80,16 +80,34 @@ link_libraries(${CERES_LIBRARIES})
 
 # Face shape from shading program
 add_executable(BlendshapeGeneration main.cpp
-                      blendshapegeneration.cpp
-                      #common.cpp
-                      #densevector.cpp
-                      #densematrix.cpp
-                      #sparsematrix.cpp
-                      meshdeformer.cpp
-                      meshtransferer.cpp
-                      pointcloud.cpp)
+               blendshapegeneration.cpp
+               meshdeformer.cpp
+               meshtransferer.cpp
+               pointcloud.cpp blendshaperefiner.cpp blendshaperefiner.h)
 
 target_link_libraries(BlendshapeGeneration
+                      Qt5::Core
+                      Qt5::Widgets
+                      Qt5::OpenGL
+                      CGAL
+                      ${MKLLIBS}
+                      ${PhGLib}
+                      basicmesh
+                      multilinearmodel)
+
+add_executable(laplaciandeformation laplaciandeformation.cpp meshdeformer.cpp pointcloud.cpp)
+target_link_libraries(laplaciandeformation
+                      Qt5::Core
+                      Qt5::Widgets
+                      Qt5::OpenGL
+                      CGAL
+                      ${MKLLIBS}
+                      ${PhGLib}
+                      basicmesh
+                      multilinearmodel)
+
+add_executable(deformationtransfer deformationtransfer.cpp meshtransferer.cpp pointcloud.cpp)
+target_link_libraries(deformationtransfer
                       Qt5::Core
                       Qt5::Widgets
                       Qt5::OpenGL

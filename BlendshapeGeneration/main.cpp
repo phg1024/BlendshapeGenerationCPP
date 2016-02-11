@@ -12,6 +12,7 @@
 #include <MultilinearReconstruction/parameters.h>
 #include <MultilinearReconstruction/utils.hpp>
 
+#include "blendshaperefiner.h"
 #include "meshdeformer.h"
 #include "meshtransferer.h"
 #include "cereswrapper.h"
@@ -35,131 +36,6 @@ struct ImageBundle {
   ReconstructionResult params;
 };
 #endif
-
-vector<int> loadLandmarks(const string &filename) {
-  const int npts = 73;
-  vector<int> v(npts);
-  ifstream fin(filename);
-  for (int i = 0; i < npts; ++i) {
-    fin >> v[i];
-    cout << v[i] << endl;
-  }
-  return v;
-}
-
-void laplacianDeformation() {
-#ifdef __APPLE__
-  const string datapath = "/Users/phg/Data/FaceWarehouse_Data_0/";
-#endif
-
-#ifdef __linux__
-  const string datapath = "/home/phg/Data/FaceWarehouse_Data_0/";
-#endif
-
-  BasicMesh m;
-  m.LoadOBJMesh(datapath + "Tester_1/Blendshape/shape_0.obj");
-
-  MeshDeformer deformer;
-  deformer.setSource(m);
-
-  vector<int> landmarks = loadLandmarks(datapath+"landmarks_74_new.txt");
-  deformer.setLandmarks(landmarks);
-
-  int objidx = 1;
-  BasicMesh T;
-  T.LoadOBJMesh(datapath + "Tester_1/TrainingPose/pose_" + to_string(objidx) + ".obj");
-
-  PointCloud lm_points;
-  lm_points.points.resize(landmarks.size(), 3);
-  for(int i=0;i<landmarks.size();++i) {
-    auto vi = T.vertex(landmarks[i]);
-    lm_points.points(i, 0) = vi[0];
-    lm_points.points(i, 1) = vi[1];
-    lm_points.points(i, 2) = vi[2];
-  }
-  BasicMesh D = deformer.deformWithMesh(T, lm_points, 20);
-
-  D.Write("deformed" + to_string(objidx) + ".obj");
-}
-
-void laplacianDeformation_pointcloud() {
-    const string datapath("/home/phg/Data/FaceWarehouse_Data_0/");
-    const string model_filename("/home/phg/Data/Multilinear/blendshape_core.tensor");
-    const string res_filename("/home/phg/Data/InternetRecon/yaoming/4.jpg.res");
-    const string pointcloud_filename("/home/phg/Data/InternetRecon/yaoming/SFS/point_cloud_opt_raw4.txt");
-
-    // Update the mesh with the blendshape weights
-    MultilinearModel model(model_filename);
-    auto recon_results = LoadReconstructionResult(res_filename);
-    model.ApplyWeights(recon_results.params_model.Wid, recon_results.params_model.Wexp);
-
-    BasicMesh m;
-    m.LoadOBJMesh(datapath + "Tester_1/Blendshape/shape_0.obj");
-    m.UpdateVertices(model.GetTM());
-    m.ComputeNormals();
-
-    m.Write("source.obj");
-
-    MeshDeformer deformer;
-    deformer.setSource(m);
-
-    vector<int> landmarks = loadLandmarks(datapath+"landmarks_74_new.txt");
-    //deformer.setLandmarks(landmarks);
-
-    ifstream fin(pointcloud_filename);
-    vector<Vector3d> points;
-    points.reserve(100000);
-    while(fin) {
-      double x, y, z;
-      fin >> x >> y >> z;
-      points.push_back(Vector3d(x, y, z));
-    }
-    MatrixXd P(points.size(), 3);
-    for(int i=0;i<points.size();++i) {
-      P.row(i) = points[i];
-    }
-
-    PointCloud lm_points;
-    lm_points.points.resize(0, 0);
-
-    BasicMesh D = deformer.deformWithPoints(P, lm_points, 20);
-
-    D.Write("deformed.obj");
-}
-
-void deformationTransfer() {
-#ifdef __APPLE__
-  const string datapath = "/Users/phg/Data/FaceWarehouse_Data_0/";
-#endif
-
-#ifdef __linux__
-  const string datapath = "/home/phg/Data/FaceWarehouse_Data_0/";
-#endif
-
-  BasicMesh S0;
-  S0.LoadOBJMesh(datapath + "Tester_1/Blendshape/shape_0.obj");
-
-  BasicMesh T0;
-  T0.LoadOBJMesh(datapath + "Tester_106/Blendshape/shape_0.obj");
-
-  // use deformation transfer to create an initial set of blendshapes
-  MeshTransferer transferer;
-
-  transferer.setSource(S0); // set source and compute deformation gradient
-  transferer.setTarget(T0); // set target and compute deformation gradient
-
-  // find the stationary set of verteces
-  vector<int> stationary_indices = T0.filterVertices([=](const Vector3d& v) {
-    return v[2] <= -0.45;
-  });
-  transferer.setStationaryVertices(stationary_indices);
-
-  BasicMesh S;
-  S.LoadOBJMesh(datapath + "Tester_1/Blendshape/shape_22.obj");
-
-  BasicMesh T = transferer.transfer(S);
-  T.Write("transferred.obj");
-}
 
 struct PointResidual {
   PointResidual(double x, double y, double z, int idx, const vector<MatrixX3d> &dB)
@@ -358,7 +234,7 @@ void blendShapeGeneration() {
   vector<BasicMesh> S0(nposes);             // ground truth training meshes
 
   // load the landmarks
-  vector<int> landmarks = loadLandmarks(datapath+"landmarks_74_new.txt");
+  vector<int> landmarks = LoadIndices(datapath+"landmarks_74_new.txt");
 
   // load the template blendshapes and ground truth blendshapes
   for(int i=0;i<=nshapes;++i) {
@@ -700,9 +576,11 @@ void blendShapeGeneration() {
   }
 }
 
+void blendShapeGeneration_pointcloud() {
+  BlendshapeRefiner refiner;
+}
+
 void printUsage() {
-  cout << "Deformation transfer: [program] -d" << endl;
-  cout << "Laplacian deformation: [program] -l" << endl;
   cout << "Blendshape generation: [program] -b" << endl;
   cout << "Blendshape visualization: [program] -v" << endl;
 }
@@ -722,17 +600,11 @@ int main(int argc, char *argv[])
 
   string option = argv[1];
 
-  if( option == "-d") {
-    deformationTransfer();
-  }
-  else if( option == "-l" ) {
-    laplacianDeformation();
-  }
-  else if( option == "-lp" ) {
-    laplacianDeformation_pointcloud();
-  }
-  else if( option == "-b" ) {
+  if( option == "-b" ) {
     blendShapeGeneration();
+  }
+  else if( option == "-bp" ) {
+    blendShapeGeneration_pointcloud();
   }
   else if( option == "-v" ) {
     // visualize blendshape
