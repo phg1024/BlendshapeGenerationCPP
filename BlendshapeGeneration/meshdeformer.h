@@ -2,7 +2,21 @@
 #include "common.h"
 #include <MultilinearReconstruction/basicmesh.h>
 #include "pointcloud.h"
-#include "sparsematrix.h"
+//#include "sparsematrix.h"
+
+#ifndef MKL_BLAS
+#define MKL_BLAS MKL_DOMAIN_BLAS
+#endif
+
+#define EIGEN_USE_MKL_ALL
+
+#include <eigen3/Eigen/Dense>
+#include <eigen3/Eigen/Geometry>
+#include <eigen3/Eigen/LU>
+#include <Eigen/Sparse>
+#include <Eigen/CholmodSupport>
+using namespace Eigen;
+
 
 struct ICPCorrespondence {
   int tidx;             // triangle index
@@ -33,4 +47,3 @@ private:
   BasicMesh S;
   vector<int> landmarks;
 };
-
