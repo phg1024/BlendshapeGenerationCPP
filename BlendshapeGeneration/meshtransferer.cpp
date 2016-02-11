@@ -68,6 +68,9 @@ BasicMesh MeshTransferer::transfer(const vector<PhGUtils::Matrix3x3d> &S1grad)
   using Tripletd = Eigen::Triplet<double>;
   using SparseMatrixd = Eigen::SparseMatrix<double, Eigen::RowMajor>;
 
+  PhGUtils::Timer tmatrix;
+  tmatrix.tic();
+
   vector<Tripletd> A_coeffs;
   A_coeffs.reserve(nterms);
 
@@ -112,9 +115,9 @@ BasicMesh MeshTransferer::transfer(const vector<PhGUtils::Matrix3x3d> &S1grad)
 
   A.setFromTriplets(A_coeffs.begin(), A_coeffs.end());
 
-  ofstream fA("A.txt");
-  fA<<A;
-  fA.close();
+  //ofstream fA("A.txt");
+  //fA<<A;
+  //fA.close();
 
   // fill in c matrix
   MatrixXd c(nrows, 3);
@@ -133,9 +136,6 @@ BasicMesh MeshTransferer::transfer(const vector<PhGUtils::Matrix3x3d> &S1grad)
     }
   }
 
-  auto G = A;
-  auto Gt = G.transpose();
-
   vector<Tripletd> D_coeffs;
   D_coeffs.reserve(nrowsA);
   for(int i=0;i<nrowsA;++i) {
@@ -148,11 +148,21 @@ BasicMesh MeshTransferer::transfer(const vector<PhGUtils::Matrix3x3d> &S1grad)
   SparseMatrixd D(nrows, nrows);
   D.setFromTriplets(D_coeffs.begin(), D_coeffs.end());
 
+  tmatrix.toc("constructing linear equations");
+
+  PhGUtils::Timer tsolve;
+  tsolve.tic();
+
+  auto G = A;
+  auto Gt = G.transpose();
+
+  auto GtD = Gt * D;
+
   // compute GtDG
-  auto GtDG = (Gt * D * G).pruned();
+  auto GtDG = (GtD * G).pruned();
 
   // compute GtD * c
-  auto GtDc = Gt * D * c;
+  auto GtDc = GtD * c;
 
   // solve for GtDG \ GtDc
   CholmodSupernodalLLT<Eigen::SparseMatrix<double>> solver;
@@ -168,6 +178,7 @@ BasicMesh MeshTransferer::transfer(const vector<PhGUtils::Matrix3x3d> &S1grad)
     cerr << "Failed to solve A\\b." << endl;
     exit(-1);
   }
+  tsolve.toc("solving linear equations");
 
   // make a copy of T0
   BasicMesh Td = T0;
