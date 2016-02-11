@@ -2,8 +2,6 @@
 
 #include "meshdeformer.h"
 #include "Geometry/geometryutils.hpp"
-//#include "densematrix.h"
-//#include "sparsematrix.h"
 #include "triangle_gradient.h"
 
 #include <CGAL/Simple_cartesian.h>

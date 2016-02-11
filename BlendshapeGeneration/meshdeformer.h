@@ -2,7 +2,6 @@
 #include "common.h"
 #include <MultilinearReconstruction/basicmesh.h>
 #include "pointcloud.h"
-//#include "sparsematrix.h"
 
 #ifndef MKL_BLAS
 #define MKL_BLAS MKL_DOMAIN_BLAS
@@ -16,7 +15,6 @@
 #include <Eigen/Sparse>
 #include <Eigen/CholmodSupport>
 using namespace Eigen;
-
 
 struct ICPCorrespondence {
   int tidx;             // triangle index

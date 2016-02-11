@@ -1,7 +1,5 @@
 #include "meshtransferer.h"
 #include "triangle_gradient.h"
-#include "sparsematrix.h"
-#include "densematrix.h"
 
 MeshTransferer::MeshTransferer()
 {
@@ -66,7 +64,15 @@ BasicMesh MeshTransferer::transfer(const vector<PhGUtils::Matrix3x3d> &S1grad)
   int ntermsA = nfaces*9;
   int ntermsC = stationary_vertices.size();
   int nterms = ntermsA + ntermsC;
-  SparseMatrix A(nrows, ncols, nterms);
+
+  using Tripletd = Eigen::Triplet<double>;
+  using SparseMatrixd = Eigen::SparseMatrix<double, Eigen::RowMajor>;
+
+  vector<Tripletd> A_coeffs;
+  A_coeffs.reserve(nterms);
+
+  SparseMatrixd A(nrows, ncols);
+
   // fill in the deformation gradient part
   for(int i=0, ioffset=0;i<nfaces;++i) {
     /*
@@ -83,33 +89,35 @@ BasicMesh MeshTransferer::transfer(const vector<PhGUtils::Matrix3x3d> &S1grad)
 
     auto Ti = T[i];
 
-    A.append(ioffset, f[0], Ti(0));
-    A.append(ioffset, f[1], Ti(1));
-    A.append(ioffset, f[2], Ti(2));
+    A_coeffs.push_back(Tripletd(ioffset, f[0], Ti(0)));
+    A_coeffs.push_back(Tripletd(ioffset, f[1], Ti(1)));
+    A_coeffs.push_back(Tripletd(ioffset, f[2], Ti(2)));
     ++ioffset;
 
-    A.append(ioffset, f[0], Ti(3));
-    A.append(ioffset, f[1], Ti(4));
-    A.append(ioffset, f[2], Ti(5));
+    A_coeffs.push_back(Tripletd(ioffset, f[0], Ti(3)));
+    A_coeffs.push_back(Tripletd(ioffset, f[1], Ti(4)));
+    A_coeffs.push_back(Tripletd(ioffset, f[2], Ti(5)));
     ++ioffset;
 
-    A.append(ioffset, f[0], Ti(6));
-    A.append(ioffset, f[1], Ti(7));
-    A.append(ioffset, f[2], Ti(8));
+    A_coeffs.push_back(Tripletd(ioffset, f[0], Ti(6)));
+    A_coeffs.push_back(Tripletd(ioffset, f[1], Ti(7)));
+    A_coeffs.push_back(Tripletd(ioffset, f[2], Ti(8)));
     ++ioffset;
   }
 
   // fill in the lower part of A, stationary vertices part
   for(int i=0;i<nsv;++i) {
-    A.append(nrowsA+i, stationary_vertices[i], 1);
+    A_coeffs.push_back(Tripletd(nrowsA+i, stationary_vertices[i], 1));
   }
+
+  A.setFromTriplets(A_coeffs.begin(), A_coeffs.end());
 
   ofstream fA("A.txt");
   fA<<A;
   fA.close();
 
   // fill in c matrix
-  DenseMatrix c(nrows, 3);
+  MatrixXd c(nrows, 3);
   for(int i=0;i<3;++i) {
     for(int j=0, joffset=0;j<nfaces;++j) {
       auto &Sj = S[j];
@@ -125,50 +133,49 @@ BasicMesh MeshTransferer::transfer(const vector<PhGUtils::Matrix3x3d> &S1grad)
     }
   }
 
-  cholmod_sparse *G = A.to_sparse();
-  cholmod_sparse *Gt = cholmod_transpose(G, 2, global::cm);
+  auto G = A;
+  auto Gt = G.transpose();
 
-  // compute GtD
-  // just multiply Dsi to corresponding elemenets
-  double *Gtx = (double*)Gt->x;
-  const int* Gtp = (const int*)(Gt->p);
+  vector<Tripletd> D_coeffs;
+  D_coeffs.reserve(nrowsA);
   for(int i=0;i<nrowsA;++i) {
-    int fidx = i/3;
-    for(int j=Gtp[i];j<Gtp[i+1];++j) {
-      Gtx[j] *= Ds[fidx];
-    }
+    int fidx = i / 3;
+    D_coeffs.push_back(Tripletd(i, i, Ds[fidx]));
   }
+  for(int i=nrowsA;i<nrows;++i) {
+    D_coeffs.push_back(Tripletd(i, i, 1));
+  }
+  SparseMatrixd D(nrows, nrows);
+  D.setFromTriplets(D_coeffs.begin(), D_coeffs.end());
 
   // compute GtDG
-  cholmod_sparse *GtDG = cholmod_ssmult(Gt, G, 0, 1, 1, global::cm);
-  GtDG->stype = 1;
+  auto GtDG = (Gt * D * G).pruned();
 
   // compute GtD * c
-  cholmod_dense *GtDc = cholmod_allocate_dense(ncols, 3, ncols, CHOLMOD_REAL, global::cm);
-  double alpha[2] = {1, 0}; double beta[2] = {0, 0};
-  cholmod_sdmult(Gt, 0, alpha, beta, c.to_dense(), GtDc, global::cm);
+  auto GtDc = Gt * D * c;
 
   // solve for GtDG \ GtDc
-  cholmod_factor *L = cholmod_analyze(GtDG, global::cm);
-  cholmod_factorize(GtDG, L, global::cm);
-  cholmod_dense *x = cholmod_solve(CHOLMOD_A, L, GtDc, global::cm);
+  CholmodSupernodalLLT<Eigen::SparseMatrix<double>> solver;
+  solver.compute(GtDG);
+  if(solver.info()!=Success) {
+    cerr << "Failed to decompose matrix A." << endl;
+    exit(-1);
+  }
+
+  MatrixXd x = solver.solve(GtDc);
+
+  if(solver.info()!=Success) {
+    cerr << "Failed to solve A\\b." << endl;
+    exit(-1);
+  }
 
   // make a copy of T0
   BasicMesh Td = T0;
 
   // change the vertices with x
-  double *Vx = (double*)x->x;
   for(int i=0;i<nverts;++i) {
-    Td.set_vertex(i, Vector3d(Vx[i], Vx[i+nverts], Vx[i+nverts*2]));
+    Td.set_vertex(i, x.row(i));
   }
-
-  // release memory
-  cholmod_free_sparse(&G, global::cm);
-  cholmod_free_sparse(&Gt, global::cm);
-  cholmod_free_sparse(&GtDG, global::cm);
-  cholmod_free_dense(&GtDc, global::cm);
-  cholmod_free_factor(&L, global::cm);
-  cholmod_free_dense(&x, global::cm);
 
   return Td;
 }
@@ -208,4 +215,3 @@ void MeshTransferer::computeT0grad()
                   );
   }
 }
-
