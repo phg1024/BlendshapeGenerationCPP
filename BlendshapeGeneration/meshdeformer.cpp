@@ -158,9 +158,10 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
   BasicMesh D = S; // make a copy of the source mesh
 
   int npoints = P.rows();
-  ofstream fP("P.txt");
-  fP << P;
-  fP.close();
+
+  //ofstream fP("P.txt");
+  //fP << P;
+  //fP.close();
 
   // the number of matrix elements in distortion term
   int ndistortion = 0;
