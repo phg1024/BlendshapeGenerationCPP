@@ -93,6 +93,7 @@ target_link_libraries(BlendshapeGeneration
                       ${MKLLIBS}
                       ${PhGLib}
                       basicmesh
+                      ioutilities
                       multilinearmodel)
 
 add_executable(laplaciandeformation laplaciandeformation.cpp meshdeformer.cpp pointcloud.cpp)
@@ -104,6 +105,7 @@ target_link_libraries(laplaciandeformation
                       ${MKLLIBS}
                       ${PhGLib}
                       basicmesh
+                      ioutilities
                       multilinearmodel)
 
 add_executable(deformationtransfer deformationtransfer.cpp meshtransferer.cpp pointcloud.cpp)
@@ -115,6 +117,7 @@ target_link_libraries(deformationtransfer
                       ${MKLLIBS}
                       ${PhGLib}
                       basicmesh
+                      ioutilities
                       multilinearmodel)
 
 link_directories(MultilinearReconstruction)
