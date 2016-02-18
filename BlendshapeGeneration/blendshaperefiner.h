@@ -3,6 +3,8 @@
 
 #include "common.h"
 
+#include "ndarray.hpp"
+
 #include <MultilinearReconstruction/basicmesh.h>
 #include <MultilinearReconstruction/ioutilities.h>
 #include <MultilinearReconstruction/multilinearmodel.h>
@@ -34,6 +36,23 @@ private:
   void InitializeBlendshapes();
 
   MatrixXd LoadPointCloud(const string& filename);
+
+  vector <BasicMesh> RefineBlendshapes(const vector <BasicMesh> &S,
+                                       const vector <Array2D<double>> &Sgrad,
+                                       const vector <BasicMesh> &B,
+                                       const BasicMesh &B00,
+                                       const vector <VectorXd> &alpha,
+                                       double beta, double gamma,
+                                       const Array2D<double> prior,
+                                       const Array2D<double> w_prior,
+                                       const vector<int> stationary_indices);
+  VectorXd EstimateWeights(const BasicMesh &S,
+                           const BasicMesh &B0,
+                           const vector<MatrixX3d> &dB,
+                           const VectorXd &w0,  // init value
+                           const VectorXd &wp,  // prior
+                           double w_prior,
+                           int itmax);
 
 private:
   unique_ptr<MultilinearModel> model;
