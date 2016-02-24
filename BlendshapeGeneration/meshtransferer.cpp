@@ -108,9 +108,11 @@ BasicMesh MeshTransferer::transfer(const vector<PhGUtils::Matrix3x3d> &S1grad)
     ++ioffset;
   }
 
+  const double w_stationary = 0.1;
+
   // fill in the lower part of A, stationary vertices part
   for(int i=0;i<nsv;++i) {
-    A_coeffs.push_back(Tripletd(nrowsA+i, stationary_vertices[i], 1));
+    A_coeffs.push_back(Tripletd(nrowsA+i, stationary_vertices[i], w_stationary));
   }
 
   A.setFromTriplets(A_coeffs.begin(), A_coeffs.end());
@@ -132,7 +134,7 @@ BasicMesh MeshTransferer::transfer(const vector<PhGUtils::Matrix3x3d> &S1grad)
   for(int i=0;i<3;++i) {
     for(int j=0, joffset=nrowsA;j<nsv;++j,++joffset) {
       auto vj = T0.vertex(stationary_vertices[j]);
-      c(joffset, i) = vj[i];
+      c(joffset, i) = vj[i] * w_stationary;
     }
   }
 

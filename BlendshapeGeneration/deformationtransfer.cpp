@@ -23,14 +23,21 @@
 #include "boost/filesystem/path.hpp"
 #include <boost/timer/timer.hpp>
 
-void deformationTransfer() {
+void deformationTransfer(const string& s0_name = string(), const string& t0_name = string(),
+                         const string& s_name = string(), const string& t_name = string()) {
   const string datapath = "/home/phg/Data/FaceWarehouse_Data_0/";
 
   BasicMesh S0;
-  S0.LoadOBJMesh(datapath + "Tester_1/Blendshape/shape_0.obj");
+  if(s0_name.empty())
+    S0.LoadOBJMesh(datapath + "Tester_1/Blendshape/shape_0.obj");
+  else
+    S0.LoadOBJMesh(s0_name);
 
   BasicMesh T0;
-  T0.LoadOBJMesh(datapath + "Tester_106/Blendshape/shape_0.obj");
+  if(t0_name.empty())
+    T0.LoadOBJMesh(datapath + "Tester_106/Blendshape/shape_0.obj");
+  else
+    T0.LoadOBJMesh(t0_name);
 
   // use deformation transfer to create an initial set of blendshapes
   MeshTransferer transferer;
@@ -45,10 +52,16 @@ void deformationTransfer() {
   transferer.setStationaryVertices(stationary_indices);
 
   BasicMesh S;
-  S.LoadOBJMesh(datapath + "Tester_1/Blendshape/shape_22.obj");
+  if(s_name.empty())
+    S.LoadOBJMesh(datapath + "Tester_1/Blendshape/shape_22.obj");
+  else
+    S.LoadOBJMesh(s_name);
 
   BasicMesh T = transferer.transfer(S);
-  T.Write("transferred.obj");
+  if(t_name.empty())
+    T.Write("transferred.obj");
+  else
+    T.Write(t_name);
 }
 
 void printUsage() {
@@ -68,10 +81,16 @@ int main(int argc, char *argv[])
     printUsage();
   }
 
-  string option = argv[1];
+  if(argc > 4) {
+    for(int i=1;i<4;++i)
+      cout << argv[i] << endl;
+    deformationTransfer(argv[1], argv[2], argv[3], argv[4]);
+  } else {
+    string option = argv[1];
 
-  if( option == "-d") {
-    deformationTransfer();
+    if( option == "-d") {
+      deformationTransfer();
+    }
   }
 
   return 0;

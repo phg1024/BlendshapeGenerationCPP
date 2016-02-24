@@ -578,10 +578,16 @@ void blendShapeGeneration() {
 
 void blendShapeGeneration_pointcloud() {
   BlendshapeRefiner refiner;
+  refiner.SetBlendshapeCount(46);
+  refiner.LoadTemplateMeshes("/home/phg/Data/FaceWarehouse_Data_0/Tester_1/Blendshape/", "shape_");
+  refiner.LoadInputReconstructionResults("/home/phg/Data/InternetRecon/yaoming/yaoming.txt");
+  refiner.LoadInputPointClouds("/home/phg/Data/InternetRecon/yaoming/SFS/");
+  refiner.Refine();
 }
 
 void printUsage() {
   cout << "Blendshape generation: [program] -b" << endl;
+  cout << "Blendshape generation with point clouds: [program] -bp" << endl;
   cout << "Blendshape visualization: [program] -v" << endl;
 }
 

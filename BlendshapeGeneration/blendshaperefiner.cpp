@@ -22,7 +22,7 @@ void BlendshapeRefiner::LoadTemplateMeshes(const string &path, const string &bas
   A.resize(num_shapes + 1);
 
   for(int i=0;i<=num_shapes;++i) {
-    A[i].LoadOBJMesh(path + "shape" + to_string(i) + ".obj");
+    A[i].LoadOBJMesh(path + basename + to_string(i) + ".obj");
   }
 }
 
@@ -89,7 +89,7 @@ void BlendshapeRefiner::CreateTrainingShapes() {
     ColorStream(ColorOutput::Green)<< "creating refined training shape " << i;
     deformer.setSource(S0[i]);
     S[i] = deformer.deformWithPoints(point_clouds[i], PointCloud(), 20);
-    S[i].Write("S_" + to_string(i) + ".obj");
+    S[i].Write("S0_" + to_string(i) + ".obj");
   }
   ColorStream(ColorOutput::Blue)<< "refined training shapes created.";
 }
@@ -102,6 +102,8 @@ void BlendshapeRefiner::InitializeBlendshapes() {
   Binit[0] = *template_mesh;
   Binit[0].UpdateVertices(model->GetTM());
   Binit[0].ComputeNormals();
+
+  Binit[0].Write("Binit_0.obj");
 
   // Deformation transfer to obtain all other blendshapes
   auto& B0 = Binit[0];
@@ -121,6 +123,17 @@ void BlendshapeRefiner::InitializeBlendshapes() {
   }
   B = Binit;
   ColorStream(ColorOutput::Blue)<< "initial set of blendshapes created.";
+
+  // Verify the blendshape and the initial weights are good
+  for(int i=0;i<num_poses;++i) {
+    // make a copy of B0
+    auto Ti = B[0];
+    for(int j=0;j<num_shapes;++j) {
+      Ti.vertices() += image_bundles[i].params.params_model.Wexp_FACS(j) * (B[j].vertices() - B[0].vertices());
+    }
+    Ti.ComputeNormals();
+    Ti.Write("S0_verify_" + std::to_string(i) + ".obj");
+  }
 }
 
 struct PointResidual {
@@ -230,15 +243,18 @@ vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> 
   const int nrows_data = 9 * nposes;
   const int ncols_data = 9 * (nshapes + 1);
 
-  MatrixXd A_data(nrows_data, ncols_data);
+  const double w_data = 10.0;
+  MatrixXd A_data = MatrixXd::Zero(nrows_data, ncols_data);
   for(int i=0;i<nposes;++i) {
+    cout << "alpha[" << i << "] = " << alpha[i].transpose() << endl;
     A_data.block(i*9, 0, 9, 9) = MatrixXd::Identity(9, 9);
     for(int j=1;j<=nshapes;++j) {
       A_data.block(i*9, j*9, 9, 9) = alpha[i](j) * MatrixXd::Identity(9, 9);
     }
   }
+  A_data *= w_data;
 
-  ColorStream(ColorOutput::Blue) << "computing perface gradients.";
+  ColorStream(ColorOutput::Blue) << "computing per-face gradients.";
   vector<MatrixXd> M(nfaces);
 
 #pragma omp parallel for
@@ -251,11 +267,13 @@ vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> 
       auto Sgrad_ij = Sgrad_j.rowptr(j);
       for(int k=0;k<9;++k) b_data(i*9+k) = Sgrad_ij[k];
     }
+    b_data *= w_data;
 
     // A_reg
     const int nrows_reg = 9 * nshapes;
     const int ncols_reg = 9 * (nshapes + 1);
-    MatrixXd A_reg(nrows_reg, ncols_reg);
+    const double w_reg = 0.025;
+    MatrixXd A_reg = MatrixXd::Zero(nrows_reg, ncols_reg);
     for(int i=0;i<nposes;++i) {
       MatrixXd A_reg_i = MatrixXd::Zero(9, ncols_reg);
 
@@ -264,16 +282,20 @@ vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> 
       const double* g = prior.rowptr(i) + j * 9;
       for(int ii=0;ii<3;++ii) {
         for(int jj=0;jj<3;++jj) {
-          A_reg_i.block(ii*3, jj*3, 3, 3) = MatrixXd::Identity(3, 3) * g[ii*3+jj] * wij;
+          A_reg_i.block(ii*3, jj*3, 3, 3) = -1 * MatrixXd::Identity(3, 3) * g[ii*3+jj] * wij;
         }
-        A_reg_i.block(ii*3, ii*3, 3, 3) -= MatrixXd::Identity(3, 3) * wij;
       }
 
-      A_reg_i.block(i*9, (i+1)*9, 9, 9) = MatrixXd::Identity(9, 9) * wij;
+      A_reg_i.block(0, 0, 9, 9) += MatrixXd::Identity(9, 9) * wij;
+      A_reg_i.block(0, (i+1)*9, 9, 9) = MatrixXd::Identity(9, 9) * wij;
+
+      A_reg.middleRows(i*9, 9) = A_reg_i;
     }
+    A_reg *= w_reg;
 
     // b_reg
     VectorXd b_reg = VectorXd::Zero(nrows_reg);
+    b_reg *= w_reg;
 
     // A_sim
     const double w_sim = 0.1;
@@ -284,7 +306,7 @@ vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> 
 
     // b_sim
     VectorXd b_sim(nrows_sim);
-    for(int k=0;k<9;++k) b_sim(k) = B00grad(j, k);
+    for(int k=0;k<9;++k) b_sim(k) = B00grad(j, k) * w_sim;
 
     const int nrows_total = nrows_data + nrows_reg + nrows_sim;
     const int ncols_total = ncols_data;
@@ -305,6 +327,7 @@ vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> 
       M[j].row(i) = Mv.middleRows(i*9, 9).transpose();
     }
   }
+  ColorStream(ColorOutput::Blue) << "done.";
 
   // reconstruct the blendshapes now
   ColorStream(ColorOutput::Blue) << "reconstructing blendshapes.";
@@ -338,6 +361,9 @@ vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> 
     DB(i) = GD.second;
   }
 
+  transferer.setSource(B0);
+  transferer.setTarget(B0);
+  transferer.setStationaryVertices(stationary_indices);
 
   // recovery all other shapes
   for(int i=1;i<=nshapes;++i) {
@@ -346,15 +372,30 @@ vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> 
     for(int j=0;j<nfaces;++j) {
       auto &Mj = M[j];
       PhGUtils::Matrix3x3d M0j(B0grad.rowptr(j), false);
+
       PhGUtils::Matrix3x3d Mij;
       for(int k=0;k<9;++k) Mij(k) = Mj(i, k);
+
       PhGUtils::Matrix3x3d Bgrad_ij = ((Mij + M0j) * M0j.inv()).transposed();
       for(int k=0;k<9;++k) Bgrad_i[j](k) = Bgrad_ij(k);
     }
     B_new[i] = transferer.transfer(Bgrad_i);
   }
 
+  // write out the blendshapes
+  for(int i=0;i<num_shapes+1;++i) {
+    B_new[i].Write("B_refined_"+to_string(i)+".obj");
+  }
+
   return B_new;
+}
+
+namespace utils {
+  void pause() {
+    std::cin.ignore(std::numeric_limits<int>::max(), '\n');
+    std::cout << "Press enter to continue...";
+    std::cin.get();
+  }
 }
 
 void BlendshapeRefiner::Refine() {
@@ -456,7 +497,7 @@ void BlendshapeRefiner::Refine() {
   double gamma_max = 0.01, gamma_min = 0.01;
   double eta_max = 1.0, eta_min = 0.1;
   int iters = 0;
-  const int maxIters = 5;
+  const int maxIters = 1;
   MatrixXd B_error = MatrixXd::Zero(maxIters, num_shapes + 1);
   MatrixXd S_error = MatrixXd::Zero(maxIters, num_poses);
   while( !converged && iters < maxIters ){
