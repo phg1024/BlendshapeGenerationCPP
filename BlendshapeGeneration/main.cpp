@@ -24,6 +24,13 @@
 #include "boost/filesystem/path.hpp"
 #include <boost/timer/timer.hpp>
 
+#include <eigen3/Eigen/Dense>
+#include <eigen3/Eigen/Geometry>
+#include <eigen3/Eigen/LU>
+#include <Eigen/Sparse>
+#include <Eigen/CholmodSupport>
+using namespace Eigen;
+
 namespace fs = boost::filesystem;
 
 #if 0
@@ -149,6 +156,93 @@ vector<BasicMesh> refineBlendShapes(const vector<BasicMesh> &S,
     DB(i) = GD.second;
   }
 
+#define USE_LONG_VECTOR_FORM 1
+#if USE_LONG_VECTOR_FORM
+  using Tripletd = Eigen::Triplet<double>;
+  using SparseMatrixd = Eigen::SparseMatrix<double, Eigen::RowMajor>;
+  vector<Tripletd> Adata_coeffs;
+
+  // fill the upper part of A
+  for(int i=0;i<nposes;++i) {
+    int row_offset = i * 9;
+    for(int j=0;j<nshapes;++j) {
+      int col_offset = j * 9;
+      for(int k=0;k<9;++k) {
+        Adata_coeffs.push_back(Tripletd(row_offset+k, col_offset+k, alpha[i](j)));
+      }
+    }
+  }
+
+  int nrows = (nposes+nshapes) * 9;
+  int ncols = nshapes * 9;
+
+  vector<MatrixXd> M(nfaces);
+
+#pragma omp parallel for
+  for(int j=0;j<nfaces;++j) {
+    if( j % 5000 == 0 ) ColorStream(ColorOutput::Red) << j << " faces processed.";
+
+    VectorXd b(nrows);
+
+    auto B0j_ptr = B0grad.rowptr(j);
+    // upper part of b
+    for(int i=0;i<nposes;++i) {
+      // the gradients of the i-th pose
+      auto Sgrad_j = Sgrad[i];
+      // the pointer to the j-th face
+      auto Sgrad_ij = Sgrad_j.rowptr(j);
+      for(int k=0;k<9;++k) b(i*9+k) = Sgrad_ij[k] - B0j_ptr[k];
+    }
+
+    // lower part of A
+    vector<Tripletd> A_coeffs = Adata_coeffs;
+    for(int i=0;i<nshapes;++i) {
+      int row_offset = (i+nposes)*9;
+      int col_offset = i * 9;
+      for(int k=0;k<9;++k) {
+        A_coeffs.push_back(Tripletd(row_offset + k, col_offset + k, beta * w_prior(i, j)));
+      }
+    }
+
+    // the lower part of b
+    int ioffset = j*9;
+    for(int i=0;i<nshapes;++i) {
+      for(int k=0;k<9;++k) b((i+nposes)*9+k) = beta * w_prior(i, j) * prior(i, ioffset+k);
+    }
+
+    // solve the equation A'A\A'b
+    Eigen::SparseMatrix<double> A(nrows, ncols);
+    A.setFromTriplets(A_coeffs.begin(), A_coeffs.end());
+    A.makeCompressed();
+
+    Eigen::SparseMatrix<double> AtA = (A.transpose() * A).pruned();
+
+    const double epsilon = 0.0;//1e-9;
+    Eigen::SparseMatrix<double> eye(ncols, ncols);
+    for(int j=0;j<ncols;++j) eye.insert(j, j) = epsilon;
+    AtA += eye;
+
+    CholmodSupernodalLLT<Eigen::SparseMatrix<double>> solver;
+    solver.compute(AtA);
+    if(solver.info()!=Success) {
+      cerr << "Failed to decompose matrix A." << endl;
+      exit(-1);
+    }
+
+    VectorXd Atb = A.transpose() * b;
+    VectorXd Mv = solver.solve(Atb);
+    if(solver.info()!=Success) {
+      cerr << "Failed to solve A\\b." << endl;
+      exit(-1);
+    }
+
+    // convert Mv to nshapes x 9 matrix
+    M[j] = MatrixXd(nshapes, 9);
+    for(int i=0;i<nshapes;++i) {
+      M[j].row(i) = Mv.middleRows(i*9, 9).transpose();
+    }
+  }
+#else
   int nrows = nposes + nshapes;
   int ncols = nshapes;
   MatrixXd A0(nrows, ncols);
@@ -192,6 +286,7 @@ vector<BasicMesh> refineBlendShapes(const vector<BasicMesh> &S,
     // solve the equation A'A\A'b
     M[j] = (A.transpose() * A).ldlt().solve(A.transpose() * b);     // nshapes x 9 matrix
   }
+#endif
 
   // reconstruct the blendshapes now
   ColorStream(ColorOutput::Blue) << "reconstructing blendshapes.";

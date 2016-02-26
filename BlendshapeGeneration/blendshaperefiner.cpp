@@ -2,13 +2,26 @@
 #include "cereswrapper.h"
 #include "meshdeformer.h"
 #include "meshtransferer.h"
-#include "triangle_gradient.h"
 
 #include "boost/filesystem/operations.hpp"
 #include "boost/filesystem/path.hpp"
 #include <boost/timer/timer.hpp>
 
 namespace fs = boost::filesystem;
+
+#include <eigen3/Eigen/Dense>
+#include <eigen3/Eigen/Geometry>
+#include <eigen3/Eigen/LU>
+#include <Eigen/Sparse>
+#include <Eigen/CholmodSupport>
+using namespace Eigen;
+
+namespace utils {
+  void pause() {
+    std::cout << "Press enter to continue...";
+    std::cin.ignore(std::numeric_limits<int>::max(), '\n');
+  }
+}
 
 BlendshapeRefiner::BlendshapeRefiner() {
   model.reset(new MultilinearModel("/home/phg/Data/Multilinear/blendshape_core.tensor"));
@@ -219,10 +232,12 @@ VectorXd BlendshapeRefiner::EstimateWeights(const BasicMesh &S, const BasicMesh 
 
 
 vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> &S,
-                                                       const vector <Array2D<double>> &Sgrad,
+                                                       const vector <vector<PhGUtils::Matrix3x3d>> &Sgrad,
                                                        const vector <BasicMesh> &B, const BasicMesh &B00,
-                                                       const vector <VectorXd> &alpha, double beta, double gamma,
-                                                       const Array2D<double> prior, const Array2D<double> w_prior,
+                                                       const vector <VectorXd> &alpha,
+                                                       double beta, double gamma,
+                                                       const vector <vector<PhGUtils::Matrix3x3d>> &prior,
+                                                       const MatrixXd& w_prior,
                                                        const vector<int> stationary_indices) {
   int nfaces = B00.NumFaces();
   int nverts = B00.NumVertices();
@@ -243,16 +258,24 @@ vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> 
   const int nrows_data = 9 * nposes;
   const int ncols_data = 9 * (nshapes + 1);
 
-  const double w_data = 10.0;
+  using Tripletd = Eigen::Triplet<double>;
+  using SparseMatrixd = Eigen::SparseMatrix<double, Eigen::RowMajor>;
+  vector<Tripletd> Adata_coeffs;
+
+  const double w_data = 1.0;
   MatrixXd A_data = MatrixXd::Zero(nrows_data, ncols_data);
   for(int i=0;i<nposes;++i) {
-    cout << "alpha[" << i << "] = " << alpha[i].transpose() << endl;
-    A_data.block(i*9, 0, 9, 9) = MatrixXd::Identity(9, 9);
+    int row_offset = i * 9;
+    for(int k=0;k<9;++k) {
+      Adata_coeffs.push_back(Tripletd(row_offset+k, k, w_data));
+    }
     for(int j=1;j<=nshapes;++j) {
-      A_data.block(i*9, j*9, 9, 9) = alpha[i](j) * MatrixXd::Identity(9, 9);
+      int col_offset = j * 9;
+      for(int k=0;k<9;++k) {
+        Adata_coeffs.push_back(Tripletd(row_offset+k, col_offset+k, w_data * alpha[i](j)));
+      }
     }
   }
-  A_data *= w_data;
 
   ColorStream(ColorOutput::Blue) << "computing per-face gradients.";
   vector<MatrixXd> M(nfaces);
@@ -262,47 +285,63 @@ vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> 
     // b_data
     VectorXd b_data(nrows_data);
     for(int i=0;i<nposes;++i) {
-      auto Sgrad_j = Sgrad[i];
-      // the pointer to the j-th face
-      auto Sgrad_ij = Sgrad_j.rowptr(j);
-      for(int k=0;k<9;++k) b_data(i*9+k) = Sgrad_ij[k];
+      auto Sgrad_ij = Sgrad[i][j];
+      for(int k=0;k<9;++k) b_data(i*9+k) = Sgrad_ij(k);
     }
     b_data *= w_data;
 
     // A_reg
+    vector<Tripletd> Areg_coeffs;
     const int nrows_reg = 9 * nshapes;
     const int ncols_reg = 9 * (nshapes + 1);
-    const double w_reg = 0.025;
-    MatrixXd A_reg = MatrixXd::Zero(nrows_reg, ncols_reg);
-    for(int i=0;i<nposes;++i) {
+    const double w_reg = 0.05;
+    //MatrixXd A_reg = MatrixXd::Zero(nrows_reg, ncols_reg);
+    for(int i=0;i<nshapes;++i) {
+      int row_offset = nrows_data + i * 9;
       MatrixXd A_reg_i = MatrixXd::Zero(9, ncols_reg);
 
       const double wij = beta * w_prior(i, j);
 
-      const double* g = prior.rowptr(i) + j * 9;
+      const PhGUtils::Matrix3x3d& Gij = prior[i][j];
+
       for(int ii=0;ii<3;++ii) {
         for(int jj=0;jj<3;++jj) {
-          A_reg_i.block(ii*3, jj*3, 3, 3) = -1 * MatrixXd::Identity(3, 3) * g[ii*3+jj] * wij;
+          // A_reg_i.block<3,3>(ii*3, jj*3) = -1 * MatrixXd::Identity(3, 3) * Gij(ii, jj) * wij;
+
+          for(int k=0;k<3;++k) {
+            Areg_coeffs.push_back(Tripletd(row_offset+ii*3+k, jj*3+k, -wij * Gij(ii, jj) * w_reg));
+            if(ii == jj) {
+              Areg_coeffs.push_back(Tripletd(row_offset+ii*3+k, jj*3+k, wij* w_reg));
+            }
+          }
         }
       }
 
-      A_reg_i.block(0, 0, 9, 9) += MatrixXd::Identity(9, 9) * wij;
-      A_reg_i.block(0, (i+1)*9, 9, 9) = MatrixXd::Identity(9, 9) * wij;
+      //A_reg_i.block<9,9>(0, 0) += MatrixXd::Identity(9, 9) * wij;
+      //A_reg_i.block<9,9>(0, (i+1)*9) = MatrixXd::Identity(9, 9) * wij;
+      int col_offset = (i+1) * 9;
+      for(int k=0;k<9;++k) {
+        Areg_coeffs.push_back(Tripletd(row_offset + k, col_offset+k, wij*w_reg));
+      }
 
-      A_reg.middleRows(i*9, 9) = A_reg_i;
+      //A_reg.middleRows(i*9, 9) = A_reg_i;
     }
-    A_reg *= w_reg;
+    //A_reg *= w_reg;
 
     // b_reg
     VectorXd b_reg = VectorXd::Zero(nrows_reg);
     b_reg *= w_reg;
 
     // A_sim
-    const double w_sim = 0.1;
+    const double w_sim = 0.01;
     const int nrows_sim = 9;
     const int ncols_sim = 9 * (nshapes + 1);
-    MatrixXd A_sim = MatrixXd::Zero(nrows_sim, ncols_sim);
-    A_sim.block(0, 0, 9, 9) = MatrixXd::Identity(9, 9) * w_sim;
+    //MatrixXd A_sim = MatrixXd::Zero(nrows_sim, ncols_sim);
+    //A_sim.block(0, 0, 9, 9) = MatrixXd::Identity(9, 9) * w_sim;
+    vector<Tripletd> Asim_coeffs;
+    for(int k=0;k<9;++k) {
+      Asim_coeffs.push_back(Tripletd(nrows_data + nrows_reg + k, k, w_sim));
+    }
 
     // b_sim
     VectorXd b_sim(nrows_sim);
@@ -310,17 +349,60 @@ vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> 
 
     const int nrows_total = nrows_data + nrows_reg + nrows_sim;
     const int ncols_total = ncols_data;
-    MatrixXd A(nrows_total, ncols_total);
-    A.topRows(nrows_data) = A_data;
-    A.middleRows(nrows_data, nrows_reg) = A_reg;
-    A.bottomRows(nrows_sim) = A_sim;
+
+
+    //MatrixXd A(nrows_total, ncols_total);
+    //A.topRows(nrows_data) = A_data;
+    //A.middleRows(nrows_data, nrows_reg) = A_reg;
+    //A.bottomRows(nrows_sim) = A_sim;
+
+    Eigen::SparseMatrix<double> A(nrows_total, ncols_total);
+    vector<Tripletd> A_coeffs = Adata_coeffs;
+    A_coeffs.insert(A_coeffs.end(), Areg_coeffs.begin(), Areg_coeffs.end());
+    A_coeffs.insert(A_coeffs.end(), Asim_coeffs.begin(), Asim_coeffs.end());
+
+    if(0) {
+      ofstream fA("A_coeffs.txt");
+      for(Tripletd& coeffs : A_coeffs) {
+        fA << coeffs.row() << ',' << coeffs.col() << ',' << coeffs.value() << endl;
+      }
+      fA.close();
+    }
+
+    A.setFromTriplets(A_coeffs.begin(), A_coeffs.end());
+    A.makeCompressed();
+
+    Eigen::SparseMatrix<double> AtA = (A.transpose() * A).pruned();
+
+    const double epsilon = 0.0;//1e-9;
+    Eigen::SparseMatrix<double> eye(ncols_total, ncols_total);
+    for(int j=0;j<ncols_total;++j) eye.insert(j, j) = epsilon;
+    AtA += eye;
+
+    CholmodSupernodalLLT<Eigen::SparseMatrix<double>> solver;
+    solver.compute(AtA);
 
     VectorXd b(nrows_total);
     b.topRows(nrows_data) = b_data;
     b.middleRows(nrows_data, nrows_reg) = b_reg;
     b.bottomRows(nrows_sim) = b_sim;
 
+    /*
+    JacobiSVD<MatrixXd> svd(A.transpose() * A);
+    double cond = svd.singularValues()(0)
+                  / svd.singularValues()(svd.singularValues().size()-1);
+    cout << cond << endl;
+
     VectorXd Mv = (A.transpose() * A).ldlt().solve(A.transpose() * b);
+    */
+
+    VectorXd Atb = A.transpose() * b;
+    VectorXd Mv = solver.solve(Atb);
+    if(solver.info()!=Success) {
+      cerr << "Failed to solve A\\b." << endl;
+      exit(-1);
+    }
+
     // Store it into M
     M[j] = MatrixXd(nshapes + 1, 9);
     for(int i=0;i<=nshapes;++i) {
@@ -390,14 +472,6 @@ vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> 
   return B_new;
 }
 
-namespace utils {
-  void pause() {
-    std::cin.ignore(std::numeric_limits<int>::max(), '\n');
-    std::cout << "Press enter to continue...";
-    std::cin.get();
-  }
-}
-
 void BlendshapeRefiner::Refine() {
   // [Step 1]: deform the inintial training shapes with the input point clouds
   CreateTrainingShapes();
@@ -410,39 +484,27 @@ void BlendshapeRefiner::Refine() {
   // [blendshape refinement] data preparation
   auto& A0 = A[0];
   const int num_faces = A0.NumFaces();
-  Array2D<double> MA0 = Array2D<double>::zeros(num_faces, 9);
+  vector<PhGUtils::Matrix3x3d> MA0(num_faces);
   for(int j=0;j<num_faces;++j) {
-    auto MA0j = triangleGradient(A0, j);
-    auto MA0j_ptr = MA0.rowptr(j);
-    for(int k=0;k<9;++k) MA0j_ptr[k] = MA0j(k);
+    MA0[j] = triangleGradient(A0, j);
   }
 
   const double kappa = 0.1;
-  Array2D<double> prior = Array2D<double>::zeros(num_shapes, 9*num_faces);
-  Array2D<double> w_prior = Array2D<double>::zeros(num_shapes, num_faces);
+  vector<vector<PhGUtils::Matrix3x3d>> prior(num_shapes, vector<PhGUtils::Matrix3x3d>(num_faces));
+  MatrixXd w_prior(num_shapes, num_faces);
   for(int i=0;i<num_shapes;++i) {
     // prior for shape i
     auto &Ai = A[i+1];
-    Array2D<double> Pi = Array2D<double>::zeros(num_faces, 9);
-    auto w_prior_i = w_prior.rowptr(i);
     for(int j=0;j<num_faces;++j) {
       auto MAij = triangleGradient(Ai, j);
-      auto MA0j_ptr = MA0.rowptr(j);
-      // create a 3x3 matrix from MA0j_ptr
-      auto MA0j = PhGUtils::Matrix3x3d(MA0j_ptr, false);
-      auto GA0Ai = MAij * (MA0j.inv());
-      auto Pij = GA0Ai;
-      double MAij_norm = (MAij-MA0j).norm();
-      w_prior_i[j] = (1+MAij_norm)/pow(kappa+MAij_norm, 2.0);
-
-      auto Pij_ptr = Pi.rowptr(j);
-      for(int k=0;k<9;++k) Pij_ptr[k] = Pij(k);
+      auto GA0Ai = MAij * (MA0[j].inv());
+      prior[i][j] = GA0Ai;
+      double MAij_norm = (MAij-MA0[j]).norm();
+      w_prior(i, j) = (1+MAij_norm)/pow(kappa+MAij_norm, 2.0);
     }
-    auto prior_i = prior.rowptr(i);
-    // prior(i,:) = Pi;
-    memcpy(prior_i, Pi.data.get(), sizeof(double)*num_faces*9);
   }
 
+  /*
   ofstream fprior("prior.txt");
   fprior<<prior;
   fprior.close();
@@ -450,6 +512,7 @@ void BlendshapeRefiner::Refine() {
   ofstream fwprior("w_prior.txt");
   fwprior<<w_prior;
   fwprior.close();
+  */
 
   ColorStream(ColorOutput::Blue)<< "priors computed.";
 
@@ -476,14 +539,11 @@ void BlendshapeRefiner::Refine() {
   // Note: this deformation gradient cannot be used to call
   // MeshTransferer::transfer directly. See this function for
   // details
-  vector<Array2D<double>> Sgrad(num_poses);
+  vector<vector<PhGUtils::Matrix3x3d>> Sgrad(num_poses, vector<PhGUtils::Matrix3x3d>(num_faces));
   for(int i=0;i<num_poses;++i) {
-    Sgrad[i] = Array2D<double>::zeros(num_faces, 9);
     for(int j=0;j<num_faces;++j) {
       // assign the reshaped gradient to the j-th row of Sgrad[i]
-      auto Sij = triangleGradient(S[i], j);
-      auto Sij_ptr = Sgrad[i].rowptr(j);
-      for(int k=0;k<9;++k) Sij_ptr[k] = Sij(k);
+      Sgrad[i][j] = triangleGradient(S[i], j);
     }
   }
 
@@ -567,12 +627,9 @@ void BlendshapeRefiner::Refine() {
 
     // compute deformation gradients for S
     for(int i=0;i<num_poses;++i) {
-      Sgrad[i] = Array2D<double>::zeros(num_faces, 9);
       for(int j=0;j<num_faces;++j) {
         // assign the reshaped gradient to the j-th row of Sgrad[i]
-        auto Sij = triangleGradient(S[i], j);
-        auto Sij_ptr = Sgrad[i].rowptr(j);
-        for(int k=0;k<9;++k) Sij_ptr[k] = Sij(k);
+        Sgrad[i][j] = triangleGradient(S[i], j);
       }
     }
   }

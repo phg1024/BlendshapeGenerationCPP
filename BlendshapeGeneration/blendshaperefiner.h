@@ -4,6 +4,7 @@
 #include "common.h"
 
 #include "ndarray.hpp"
+#include "triangle_gradient.h"
 
 #include <MultilinearReconstruction/basicmesh.h>
 #include <MultilinearReconstruction/ioutilities.h>
@@ -38,14 +39,14 @@ private:
   MatrixXd LoadPointCloud(const string& filename);
 
   vector <BasicMesh> RefineBlendshapes(const vector <BasicMesh> &S,
-                                       const vector <Array2D<double>> &Sgrad,
-                                       const vector <BasicMesh> &B,
-                                       const BasicMesh &B00,
+                                       const vector <vector<PhGUtils::Matrix3x3d>> &Sgrad,
+                                       const vector <BasicMesh> &B, const BasicMesh &B00,
                                        const vector <VectorXd> &alpha,
                                        double beta, double gamma,
-                                       const Array2D<double> prior,
-                                       const Array2D<double> w_prior,
-                                       const vector<int> stationary_indices);
+                                       const vector <vector<PhGUtils::Matrix3x3d>> &prior,
+                                       const MatrixXd& w_prior,
+                                       const vector<int> stationary_indices );
+
   VectorXd EstimateWeights(const BasicMesh &S,
                            const BasicMesh &B0,
                            const vector<MatrixX3d> &dB,
