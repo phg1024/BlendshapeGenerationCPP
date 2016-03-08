@@ -233,6 +233,7 @@ VectorXd BlendshapeRefiner::EstimateWeights(const BasicMesh &S, const BasicMesh 
 
 vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> &S,
                                                        const vector <vector<PhGUtils::Matrix3x3d>> &Sgrad,
+                                                       const vector <BasicMesh> &A,
                                                        const vector <BasicMesh> &B, const BasicMesh &B00,
                                                        const vector <VectorXd> &alpha,
                                                        double beta, double gamma,
@@ -294,7 +295,8 @@ vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> 
     vector<Tripletd> Areg_coeffs;
     const int nrows_reg = 9 * nshapes;
     const int ncols_reg = 9 * (nshapes + 1);
-    const double w_reg = 0.05;
+    // FIXME try increase the regularization weight
+    const double w_reg = 0.5;
     //MatrixXd A_reg = MatrixXd::Zero(nrows_reg, ncols_reg);
     for(int i=0;i<nshapes;++i) {
       int row_offset = nrows_data + i * 9;
@@ -333,6 +335,7 @@ vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> 
     b_reg *= w_reg;
 
     // A_sim
+    // FIXME try include all shapes to provide better constraints
     const double w_sim = 0.01;
     const int nrows_sim = 9;
     const int ncols_sim = 9 * (nshapes + 1);
@@ -447,9 +450,13 @@ vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> 
   transferer.setTarget(B0);
   transferer.setStationaryVertices(stationary_indices);
 
+  // @FIXME try do deformation transfer on the new neutral shape instead of using the
+  // computed triangle gradients.
+
   // recovery all other shapes
   for(int i=1;i<=nshapes;++i) {
     ColorStream(ColorOutput::Green)<< "reconstructing blendshapes " << i;
+    #if 0
     vector<PhGUtils::Matrix3x3d> Bgrad_i(nfaces);
     for(int j=0;j<nfaces;++j) {
       auto &Mj = M[j];
@@ -462,6 +469,10 @@ vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> 
       for(int k=0;k<9;++k) Bgrad_i[j](k) = Bgrad_ij(k);
     }
     B_new[i] = transferer.transfer(Bgrad_i);
+    #else
+    transferer.setSource(A[0]);
+    B_new[i] = transferer.transfer(A[i]);
+    #endif
   }
 
   // write out the blendshapes
@@ -570,7 +581,7 @@ void BlendshapeRefiner::Refine() {
     double gamma = gamma_max + iters/maxIters*(gamma_min-gamma_max);
     double eta = eta_max + iters/maxIters*(eta_min-eta_max);
 
-    auto B_new = RefineBlendshapes(S, Sgrad, B, B00, alpha, beta, gamma, prior, w_prior, stationary_indices);
+    auto B_new = RefineBlendshapes(S, Sgrad, A, B, B00, alpha, beta, gamma, prior, w_prior, stationary_indices);
 
     // convergence test
     VectorXd B_norm(num_shapes+1);

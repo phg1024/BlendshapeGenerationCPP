@@ -40,6 +40,7 @@ private:
 
   vector <BasicMesh> RefineBlendshapes(const vector <BasicMesh> &S,
                                        const vector <vector<PhGUtils::Matrix3x3d>> &Sgrad,
+                                       const vector <BasicMesh> &A,
                                        const vector <BasicMesh> &B, const BasicMesh &B00,
                                        const vector <VectorXd> &alpha,
                                        double beta, double gamma,
