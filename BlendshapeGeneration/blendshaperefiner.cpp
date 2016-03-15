@@ -615,7 +615,7 @@ void BlendshapeRefiner::Refine() {
   double gamma_max = 0.01, gamma_min = 0.01;
   double eta_max = 1.0, eta_min = 0.1;
   int iters = 0;
-  const int maxIters = 1;
+  const int maxIters = 3;   // This will do 2 subdivisions
   MatrixXd B_error = MatrixXd::Zero(maxIters, num_shapes + 1);
   MatrixXd S_error = MatrixXd::Zero(maxIters, num_poses);
   while( !converged && iters < maxIters ){
@@ -674,6 +674,16 @@ void BlendshapeRefiner::Refine() {
     }
     //fprintf('Emax = %.6f\tEmean = %.6f\n', max(S_error(iters,:)), mean(S_error(iters,:)));
 
+    // Optional: subdivide all meshes
+    const bool do_subdivision = true;
+    if(do_subdivision){
+      // Subdivide every mesh
+      // Subdivide A and update prior, w_prior, stationary_indices
+
+      // Subdivide B and B00
+
+      // Subdivide S, no need to update Sgrad because S will be deformed later
+    }
 
     // The reconstructed mesh are updated using the new set of blendshape
     // weights, need to use laplacian deformation to refine them again
