@@ -541,26 +541,40 @@ void BlendshapeRefiner::Refine() {
 
   // [blendshape refinement] data preparation
   auto& A0 = A[0];
-  const int num_faces = A0.NumFaces();
-  vector<PhGUtils::Matrix3x3d> MA0(num_faces);
-  for(int j=0;j<num_faces;++j) {
-    MA0[j] = triangleGradient(A0, j);
-  }
+  int num_faces = A0.NumFaces();
 
-  const double kappa = 0.1;
-  vector<vector<PhGUtils::Matrix3x3d>> prior(num_shapes, vector<PhGUtils::Matrix3x3d>(num_faces));
-  MatrixXd w_prior(num_shapes, num_faces);
-  for(int i=0;i<num_shapes;++i) {
-    // prior for shape i
-    auto &Ai = A[i+1];
+  auto ComputerPrior = [](const vector<BasicMesh>& A) {
+    auto& A0 = A[0];
+    int num_faces = A0.NumFaces();
+    int num_shapes = A.size()-1;
+    const double kappa = 0.1;
+
+    vector<PhGUtils::Matrix3x3d> MA0(num_faces);
     for(int j=0;j<num_faces;++j) {
-      auto MAij = triangleGradient(Ai, j);
-      auto GA0Ai = MAij * (MA0[j].inv());
-      prior[i][j] = GA0Ai;
-      double MAij_norm = (MAij-MA0[j]).norm();
-      w_prior(i, j) = (1+MAij_norm)/pow(kappa+MAij_norm, 2.0);
+      MA0[j] = triangleGradient(A0, j);
     }
-  }
+
+    vector<vector<PhGUtils::Matrix3x3d>> prior(num_shapes, vector<PhGUtils::Matrix3x3d>(num_faces));
+    MatrixXd w_prior(num_shapes, num_faces);
+    for(int i=0;i<num_shapes;++i) {
+      // prior for shape i
+      auto &Ai = A[i+1];
+      for(int j=0;j<num_faces;++j) {
+        auto MAij = triangleGradient(Ai, j);
+        auto GA0Ai = MAij * (MA0[j].inv());
+        prior[i][j] = GA0Ai;
+        double MAij_norm = (MAij-MA0[j]).norm();
+        w_prior(i, j) = (1+MAij_norm)/pow(kappa+MAij_norm, 2.0);
+      }
+    }
+
+    return make_pair(prior, w_prior);
+  };
+
+  // Computer prior from A
+  vector<vector<PhGUtils::Matrix3x3d>> prior;
+  MatrixXd w_prior;
+  tie(prior, w_prior) = ComputerPrior(A);
 
   /*
   ofstream fprior("prior.txt");
@@ -674,15 +688,33 @@ void BlendshapeRefiner::Refine() {
     }
     //fprintf('Emax = %.6f\tEmean = %.6f\n', max(S_error(iters,:)), mean(S_error(iters,:)));
 
+    if(iters == maxIters - 1) break;
+    
     // Optional: subdivide all meshes
     const bool do_subdivision = true;
     if(do_subdivision){
       // Subdivide every mesh
       // Subdivide A and update prior, w_prior, stationary_indices
+      for(auto &Ai : A) {
+        Ai.Subdivide();
+      }
+      tie(prior, w_prior) = ComputerPrior(A);
 
       // Subdivide B and B00
+      for(auto &Bi : B) {
+        Bi.Subdivide();
+      }
+      stationary_indices = B00.filterVertices([=](const Vector3d& v) {
+        return v[2] <= -0.45;
+      });
+      B00.Subdivide();
 
       // Subdivide S, no need to update Sgrad because S will be deformed later
+      for(auto &Si : S) {
+        Si.Subdivide();
+      }
+
+      num_faces *= 4;
     }
 
     // The reconstructed mesh are updated using the new set of blendshape
@@ -691,10 +723,12 @@ void BlendshapeRefiner::Refine() {
       MeshDeformer deformer;
       deformer.setSource(S[i]);
       S[i] = deformer.deformWithPoints(point_clouds[i], PointCloud(), 5);
+      S[i].Write("S_refined_" + to_string(i) + ".obj");
     }
 
     // compute deformation gradients for S
     for(int i=0;i<num_poses;++i) {
+      Sgrad[i].resize(num_faces);
       for(int j=0;j<num_faces;++j) {
         // assign the reshaped gradient to the j-th row of Sgrad[i]
         Sgrad[i][j] = triangleGradient(S[i], j);

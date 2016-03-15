@@ -396,6 +396,9 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
     tmatrix.tic();
 
     M.setFromTriplets(M_coeffs.begin(), M_coeffs.end());
+
+    // FIXME try QR factorization
+
     auto Mt = M.transpose();
     auto MtM = Mt * M;
 
