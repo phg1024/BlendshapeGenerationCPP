@@ -162,9 +162,9 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
   double ratio_data2icp = max(0.1, 10.0*lm_points.points.nrow / (double) S.NumVertices());
   //cout << ratio_data2icp << endl;
   double w_icp = 0, w_icp_step = ratio_data2icp;
-  double w_data = 10.0, w_data_step = w_data/itmax;
+  double w_data = 10.0*74.0/lm_points.points.nrow, w_data_step = w_data/itmax;
   double w_dist = 10000.0 * ratio_data2icp, w_dist_step = w_dist/itmax;
-  double w_prior = 0.001, w_prior_step = w_prior*0.95/itmax;
+  double w_prior = 0.1, w_prior_step = w_prior*0.95/itmax;
 
   #define ANALYZE_ONCE 1  // analyze MtM only once
   bool analyzed = false;
@@ -276,6 +276,7 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
       double wi = w_data;
 
       /*
+      // for debugging
       cout << "("
            << lm_points.points(ioffset) << ","
            << lm_points.points(ioffset+1) << ","
@@ -283,9 +284,9 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
            << ")"
            << " vs "
            << "("
-           << V(dstart) << ","
-           << V(dstart+1) << ","
-           << V(dstart+2)
+           << S.vertex(landmarks[i])[0] << ","
+           << S.vertex(landmarks[i])[1] << ","
+           << S.vertex(landmarks[i])[2]
            << ") " << wi
            << endl;
       */
@@ -520,7 +521,7 @@ vector<ICPCorrespondence> MeshDeformer::findClosestPoints_tree(const MatrixX3d &
                        p2(v2[0], v2[1], v2[2]);
     PhGUtils::Vector3d normal(p1-p0, p2-p0);
     PhGUtils::Vector3d dvec(dx, dy, dz);
-    bestCorr.weight = normal.normalized().dot(dvec.normalized());
+    bestCorr.weight = fabs(normal.normalized().dot(dvec.normalized()));
 
     corrs[pidx] = bestCorr;
   }

@@ -96,12 +96,29 @@ void BlendshapeRefiner::CreateTrainingShapes() {
   }
   ColorStream(ColorOutput::Blue)<< "initial training shapes created.";
 
+  // Use the points in the back of the model as landmark points
+  vector<int> fixed_points_idx = template_mesh->filterVertices([](Vector3d v){
+    return v[2] < -0.25;
+  });
+  cout << fixed_points_idx.size() << endl;
+
+  PointCloud fixed_points;
+  fixed_points.points.resize(fixed_points_idx.size(), 3);
+  for(int i=0;i<fixed_points_idx.size();++i) {
+    fixed_points.points(i*3+0) = template_mesh->vertex(fixed_points_idx[i])[0];
+    fixed_points.points(i*3+1) = template_mesh->vertex(fixed_points_idx[i])[1];
+    fixed_points.points(i*3+2) = template_mesh->vertex(fixed_points_idx[i])[2];
+  }
+
   MeshDeformer deformer;
+  deformer.setLandmarks(fixed_points_idx);
+
   S.resize(num_poses);
   for(int i=0;i<num_poses;++i) {
     ColorStream(ColorOutput::Green)<< "creating refined training shape " << i;
     deformer.setSource(S0[i]);
-    S[i] = deformer.deformWithPoints(point_clouds[i], PointCloud(), 20);
+
+    S[i] = deformer.deformWithPoints(point_clouds[i], fixed_points, 20);
     S[i].Write("S0_" + to_string(i) + ".obj");
   }
   ColorStream(ColorOutput::Blue)<< "refined training shapes created.";
@@ -205,14 +222,14 @@ VectorXd BlendshapeRefiner::EstimateWeights(const BasicMesh &S, const BasicMesh 
 
     CostFunction *costfun = new AutoDiffCostFunction<PointResidual, 3, 46>(
       new PointResidual(dx, dy, dz, i, dB));
-    problem.AddResidualBlock(costfun, NULL, w.data());
+    problem.AddResidualBlock(costfun, NULL, w.data()+1);
   }
 
   // add prior if necessary
   if( fabs(w_prior) > 1e-6 ) {
     problem.AddResidualBlock(
-      new AutoDiffCostFunction<PriorResidue, 46, 46>(new PriorResidue(wp.data())),
-      NULL, w.data());
+      new AutoDiffCostFunction<PriorResidue, 46, 46>(new PriorResidue(wp.data()+1)),
+      NULL, w.data()+1);
   }
 
   cout << "w0 = " << endl;
@@ -256,6 +273,18 @@ vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> 
     DB0(i) = GD.second;
   }
 
+  // compute the deformation gradients for B0j
+  vector<Array2D<double>> B00grads(nshapes+1, Array2D<double>(nfaces, 9));
+  B00grads[0] = B00grad;
+  for(int j=1;j<=nshapes;++j) {
+    B00grads[j].resize(nfaces, 9);
+    for(int i=0;i<nfaces;++i) {
+      auto GD = triangleGradient2(B[j], i);
+      auto B0ji_ptr = B00grads[j].rowptr(i);
+      for(int k=0;k<9;++k) B0ji_ptr[k] = GD.first(k);
+    }
+  }
+
   const int nrows_data = 9 * nposes;
   const int ncols_data = 9 * (nshapes + 1);
 
@@ -295,6 +324,7 @@ vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> 
     vector<Tripletd> Areg_coeffs;
     const int nrows_reg = 9 * nshapes;
     const int ncols_reg = 9 * (nshapes + 1);
+
     // FIXME try increase the regularization weight
     const double w_reg = 0.5;
     //MatrixXd A_reg = MatrixXd::Zero(nrows_reg, ncols_reg);
@@ -336,11 +366,11 @@ vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> 
 
     // A_sim
     // FIXME try include all shapes to provide better constraints
+    #if 0
     const double w_sim = 0.01;
     const int nrows_sim = 9;
     const int ncols_sim = 9 * (nshapes + 1);
-    //MatrixXd A_sim = MatrixXd::Zero(nrows_sim, ncols_sim);
-    //A_sim.block(0, 0, 9, 9) = MatrixXd::Identity(9, 9) * w_sim;
+
     vector<Tripletd> Asim_coeffs;
     for(int k=0;k<9;++k) {
       Asim_coeffs.push_back(Tripletd(nrows_data + nrows_reg + k, k, w_sim));
@@ -349,6 +379,23 @@ vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> 
     // b_sim
     VectorXd b_sim(nrows_sim);
     for(int k=0;k<9;++k) b_sim(k) = B00grad(j, k) * w_sim;
+    #else
+    const double w_sim = 0.5;
+    const int nrows_sim = 9 * (nshapes + 1);
+    const int ncols_sim = 9 * (nshapes + 1);
+
+    vector<Tripletd> Asim_coeffs;
+    for(int k=0;k<9*(nshapes+1);++k) {
+      Asim_coeffs.push_back(Tripletd(nrows_data + nrows_reg + k, k, w_sim));
+    }
+
+    // b_sim
+    VectorXd b_sim(nrows_sim);
+    for(int k=0;k<9;++k) b_sim(k) = B00grads[0](j, k) * w_sim;
+    for(int i=1;i<=nshapes;++i) {
+      for(int k=0;k<9;++k) b_sim(i*9+k) = (B00grads[i](j, k) - B00grads[0](j, k))* w_sim;
+    }
+    #endif
 
     const int nrows_total = nrows_data + nrows_reg + nrows_sim;
     const int ncols_total = ncols_data;
@@ -456,7 +503,7 @@ vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> 
   // recovery all other shapes
   for(int i=1;i<=nshapes;++i) {
     ColorStream(ColorOutput::Green)<< "reconstructing blendshapes " << i;
-    #if 0
+    #if 1
     vector<PhGUtils::Matrix3x3d> Bgrad_i(nfaces);
     for(int j=0;j<nfaces;++j) {
       auto &Mj = M[j];
@@ -617,7 +664,7 @@ void BlendshapeRefiner::Refine() {
       // make a copy of B0
       auto Ti = B[0];
       for(int j=0;j<num_shapes;++j) {
-        Ti.vertices() += alpha[i](j) * dB[j];
+        Ti.vertices() += alpha[i](j+1) * dB[j];
       }
       //Ti = alignMesh(Ti, S0{i});
       //S_error(iters, i) = sqrt(max(sum((Ti.vertices-S0{i}.vertices).^2, 2)));
