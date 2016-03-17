@@ -19,14 +19,9 @@ typedef CGAL::AABB_triangle_primitive<K, Iterator> Primitive;
 typedef CGAL::AABB_traits<K, Primitive> AABB_triangle_traits;
 typedef CGAL::AABB_tree<AABB_triangle_traits> Tree;
 
-MeshDeformer::MeshDeformer()
-{
-}
+MeshDeformer::MeshDeformer() {}
 
-
-MeshDeformer::~MeshDeformer()
-{
-}
+MeshDeformer::~MeshDeformer() {}
 
 BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const PointCloud &lm_points, int itmax)
 {
@@ -400,7 +395,7 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
     // FIXME try QR factorization
 
     auto Mt = M.transpose();
-    auto MtM = Mt * M;
+    auto MtM = (Mt * M).pruned();
 
     // compute M' * b
     //cout << "computing M'*b..." << endl;
@@ -469,17 +464,36 @@ vector<ICPCorrespondence> MeshDeformer::findClosestPoints_tree(const MatrixX3d &
   int nfaces = mesh.NumFaces();
   int npoints = P.rows();
 
+  vector<int> face_indices_map;
   std::vector<Triangle> triangles;
   triangles.reserve(nfaces);
-  for(int i=0,ioffset=0;i<nfaces;++i) {
-    auto face_i = mesh.face(i);
-    int v1 = face_i[0], v2 = face_i[1], v3 = face_i[2];
-    auto p1 = mesh.vertex(v1), p2 = mesh.vertex(v2), p3 = mesh.vertex(v3);
-    Point a(p1[0], p1[1], p1[2]);
-    Point b(p2[0], p2[1], p2[2]);
-    Point c(p3[0], p3[1], p3[2]);
+  if(valid_faces.empty()) {
+    face_indices_map.resize(nfaces);
+    for(int i=0,ioffset=0;i<nfaces;++i) {
+      face_indices_map[i] = i;
+      auto face_i = mesh.face(i);
+      int v1 = face_i[0], v2 = face_i[1], v3 = face_i[2];
+      auto p1 = mesh.vertex(v1), p2 = mesh.vertex(v2), p3 = mesh.vertex(v3);
+      Point a(p1[0], p1[1], p1[2]);
+      Point b(p2[0], p2[1], p2[2]);
+      Point c(p3[0], p3[1], p3[2]);
 
-    triangles.push_back(Triangle(a, b, c));
+      triangles.push_back(Triangle(a, b, c));
+    }
+  } else {
+    face_indices_map.resize(valid_faces.size());
+    int idx = 0;
+    for(int i : valid_faces) {
+      auto face_i = mesh.face(i);
+      face_indices_map[idx++] = i;
+      int v1 = face_i[0], v2 = face_i[1], v3 = face_i[2];
+      auto p1 = mesh.vertex(v1), p2 = mesh.vertex(v2), p3 = mesh.vertex(v3);
+      Point a(p1[0], p1[1], p1[2]);
+      Point b(p2[0], p2[1], p2[2]);
+      Point c(p3[0], p3[1], p3[2]);
+
+      triangles.push_back(Triangle(a, b, c));
+    }
   }
 
   Tree tree(triangles.begin(), triangles.end());
@@ -496,7 +510,7 @@ vector<ICPCorrespondence> MeshDeformer::findClosestPoints_tree(const MatrixX3d &
     ICPCorrespondence bestCorr;
     bestCorr.d = numeric_limits<double>::max();
     Tree::Point_and_primitive_id bestHit = tree.closest_point_and_primitive(Point(px, py, pz));
-    bestCorr.tidx = bestHit.second - triangles.begin();
+    bestCorr.tidx = face_indices_map[bestHit.second - triangles.begin()];
     bestCorr.hit[0] = bestHit.first.x(); bestCorr.hit[1] = bestHit.first.y(); bestCorr.hit[2] = bestHit.first.z();
     double dx = px - bestHit.first.x(), dy = py - bestHit.first.y(), dz = pz - bestHit.first.z();
     bestCorr.d = dx*dx+dy+dy+dz*dz;

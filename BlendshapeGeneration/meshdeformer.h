@@ -32,6 +32,10 @@ public:
 
   void setSource(const BasicMesh &src) { S = src; }
   void setLandmarks(const vector<int> &lms) { landmarks = lms; }
+  void setValidFaces(const vector<int> &fidx) {
+    valid_faces = fidx;
+  }
+
   BasicMesh deformWithMesh(const BasicMesh &T, const PointCloud &lm_points, int itmax = 10);
   BasicMesh deformWithPoints(const MatrixX3d &P, const PointCloud &lm_points, int itmax = 10);
 
@@ -44,4 +48,5 @@ protected:
 private:
   BasicMesh S;
   vector<int> landmarks;
+  vector<int> valid_faces;
 };

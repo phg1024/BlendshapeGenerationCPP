@@ -92,6 +92,13 @@ void laplacianDeformation_pointcloud() {
   PointCloud lm_points;
   lm_points.points.resize(0, 0);
 
+  // Filter the faces to reduce the search range
+  vector<int> valid_faces = m.filterFaces([&m](Vector3i fi) {
+    Vector3d c = (m.vertex(fi[0]) + m.vertex(fi[1]) + m.vertex(fi[2]))/ 3.0;
+    return c[2] > -0.5;
+  });
+  deformer.setValidFaces(valid_faces);
+
   BasicMesh D = deformer.deformWithPoints(P, lm_points, 20);
 
   D.Write("deformed.obj");
@@ -113,6 +120,7 @@ int main(int argc, char *argv[])
 
   if( argc < 2 ) {
     printUsage();
+    return 0;
   }
 
   string option = argv[1];
