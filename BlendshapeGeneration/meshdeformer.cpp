@@ -392,8 +392,6 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
 
     M.setFromTriplets(M_coeffs.begin(), M_coeffs.end());
 
-    // FIXME try QR factorization
-
     auto Mt = M.transpose();
     auto MtM = (Mt * M).pruned();
 
@@ -405,29 +403,52 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
     PhGUtils::Timer tsolve;
     tsolve.tic();
 
-    //cout << "Solving (M'*M)\(M'*b) ..." << endl;
-    // solve (M'*M)\(M'*b)
-    // solution vector
-    #if ANALYZE_ONCE
-      if(!analyzed) {
-        solver.analyzePattern(MtM);
-        analyzed = true;
+    VectorXd x;
+
+    // FIXME try QR factorization
+    bool use_direct_solver = nverts < 50000;
+    if(use_direct_solver) {
+      cout << "Using direct solver..." << endl;
+      //cout << "Solving (M'*M)\(M'*b) ..." << endl;
+      // solve (M'*M)\(M'*b)
+      // solution vector
+      #if ANALYZE_ONCE
+        if(!analyzed) {
+          solver.analyzePattern(MtM);
+          analyzed = true;
+        }
+        solver.factorize(MtM);
+      #else
+        solver.compute(MtM);
+      #endif
+
+      if(solver.info()!=Success) {
+        cerr << "Failed to decompose matrix A." << endl;
+        exit(-1);
       }
-      solver.factorize(MtM);
-    #else
+
+      x = solver.solve(Mtb);
+      if(solver.info()!=Success) {
+        cerr << "Failed to solve A\\b." << endl;
+        exit(-1);
+      }
+    } else {
+      cout << "Using iterative solver..." << endl;
+      // use iterative solver
+      BiCGSTAB<SparseMatrixd> solver;
+      solver.setMaxIterations(512);
       solver.compute(MtM);
-    #endif
-
-    if(solver.info()!=Success) {
-      cerr << "Failed to decompose matrix A." << endl;
-      exit(-1);
+      VectorXd x0(nverts*3);
+      for(int i=0;i<nverts;++i) {
+        x0[i*3+0] = S.vertex(i)[0];
+        x0[i*3+1] = S.vertex(i)[1];
+        x0[i*3+2] = S.vertex(i)[2];
+      }
+      x = solver.solveWithGuess(Mtb, x0);
+      std::cout << "#iterations:     " << solver.iterations() << std::endl;
+      std::cout << "estimated error: " << solver.error()      << std::endl;
     }
 
-    VectorXd x = solver.solve(Mtb);
-    if(solver.info()!=Success) {
-      cerr << "Failed to solve A\\b." << endl;
-      exit(-1);
-    }
     //cout << "done." << endl;
     tsolve.toc("solving linear equations");
 

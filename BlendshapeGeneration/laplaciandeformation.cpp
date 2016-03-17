@@ -63,19 +63,6 @@ void laplacianDeformation_pointcloud() {
   auto recon_results = LoadReconstructionResult(res_filename);
   model.ApplyWeights(recon_results.params_model.Wid, recon_results.params_model.Wexp);
 
-  BasicMesh m;
-  m.LoadOBJMesh(datapath + "Tester_1/Blendshape/shape_0.obj");
-  m.UpdateVertices(model.GetTM());
-  m.ComputeNormals();
-
-  m.Write("source.obj");
-
-  MeshDeformer deformer;
-  deformer.setSource(m);
-
-  vector<int> landmarks = LoadIndices(datapath+"landmarks_74_new.txt");
-  //deformer.setLandmarks(landmarks);
-
   ifstream fin(pointcloud_filename);
   vector<Vector3d> points;
   points.reserve(100000);
@@ -92,16 +79,33 @@ void laplacianDeformation_pointcloud() {
   PointCloud lm_points;
   lm_points.points.resize(0, 0);
 
-  // Filter the faces to reduce the search range
-  vector<int> valid_faces = m.filterFaces([&m](Vector3i fi) {
-    Vector3d c = (m.vertex(fi[0]) + m.vertex(fi[1]) + m.vertex(fi[2]))/ 3.0;
-    return c[2] > -0.5;
-  });
-  deformer.setValidFaces(valid_faces);
+  BasicMesh m;
+  m.LoadOBJMesh(datapath + "Tester_1/Blendshape/shape_0.obj");
+  m.UpdateVertices(model.GetTM());
 
-  BasicMesh D = deformer.deformWithPoints(P, lm_points, 20);
+  for(int i=0;i<1;++i) {
+    m.Write("source" + to_string(i) + ".obj");
 
-  D.Write("deformed.obj");
+    MeshDeformer deformer;
+    deformer.setSource(m);
+
+    // Filter the faces to reduce the search range
+    vector<int> valid_faces = m.filterFaces([&m](Vector3i fi) {
+      Vector3d c = (m.vertex(fi[0]) + m.vertex(fi[1]) + m.vertex(fi[2]))/ 3.0;
+      return c[2] > -0.5;
+    });
+    deformer.setValidFaces(valid_faces);
+
+    BasicMesh D = deformer.deformWithPoints(P, lm_points, 20);
+    D.Write("deformed" + to_string(i) + ".obj");
+
+    // replace it
+    m = D;
+    m.BuildHalfEdgeMesh();
+    m.Subdivide();
+  }
+
+  m.Write("deformed.obj");
 }
 
 void printUsage() {
