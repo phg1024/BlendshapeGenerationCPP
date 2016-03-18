@@ -217,7 +217,7 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
     }
     const int ncols = vertex_index * 3;
 
-    cout << "ncols = " << ncols << endl;
+    //cout << "ncols = " << ncols << endl;
 
     // count the total number of terms
     int nrows = 0;
@@ -227,14 +227,14 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
     nterms += npoints * 9;
     nrows += npoints * 3;
 
-    cout << "npoints = " << npoints << endl;
+    //cout << "npoints = " << npoints << endl;
 
     // add landmarks terms
     int ndata = landmarks.size();
     nterms += ndata * 3;
     nrows += ndata * 3;
 
-    cout << "ndata = " << ndata << endl;
+    //cout << "ndata = " << ndata << endl;
 
     // add prior terms
     //int nprior = S.NumVertices();
@@ -242,7 +242,7 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
     nterms += nprior * 3;
     nrows += nprior * 3;
 
-    cout << "nprior = " << nprior << endl;
+    //cout << "nprior = " << nprior << endl;
 
     // add distortion terms
     // the number of matrix elements in distortion term
@@ -255,7 +255,7 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
     }
     ndistortion *= 9;
 
-    cout << "ndistortion = " << valid_vertices.size() << endl;
+    //cout << "ndistortion = " << valid_vertices.size() << endl;
 
     nterms += ndistortion;
     //nrows += S.NumVertices() * 3;

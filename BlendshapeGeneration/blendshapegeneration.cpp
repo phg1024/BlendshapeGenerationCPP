@@ -159,7 +159,7 @@ void BlendshapeVisualizer::computeDistance()
 {
   if( refmesh.NumFaces() <= 0 ) return;
 
-  int nfaces = mesh.NumFaces();
+  int nfaces = refmesh.NumFaces();
 
   std::vector<Triangle> triangles;
   triangles.reserve(nfaces);

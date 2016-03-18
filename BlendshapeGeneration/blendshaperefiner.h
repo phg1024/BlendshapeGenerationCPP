@@ -46,7 +46,8 @@ private:
                                        double beta, double gamma,
                                        const vector <vector<PhGUtils::Matrix3x3d>> &prior,
                                        const MatrixXd& w_prior,
-                                       const vector<int> stationary_indices );
+                                       const vector<int> stationary_indices,
+                                       bool refine_neutral_only = true);
 
   VectorXd EstimateWeights(const BasicMesh &S,
                            const BasicMesh &B0,
