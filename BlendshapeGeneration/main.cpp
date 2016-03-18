@@ -712,6 +712,9 @@ int main(int argc, char *argv[])
     QApplication a(argc, argv);
     BlendshapeGeneration w;
     w.show();
+    if(argc>3) {
+      w.LoadMeshes(argv[2], argv[3]);
+    }
     return a.exec();
   }
 

@@ -58,8 +58,13 @@ void BlendshapeVisualizer::paintGL()
   disableLighting();
 
   if( !dists.empty() ) {
+    #if 0
     double minVal = (*std::min_element(dists.begin(), dists.end()));
     double maxVal = (*std::max_element(dists.begin(), dists.end()));
+    #else
+    double minVal = 0.0;
+    double maxVal = 0.075;
+    #endif
     string minStr = "min: " + to_string(minVal);
     string maxStr = "max: " + to_string(maxVal);
     glColor4f(0, 0, 1, 1);
@@ -226,16 +231,22 @@ void BlendshapeVisualizer::drawMesh(const BasicMesh &m)
 
 void BlendshapeVisualizer::drawMeshWithColor(const BasicMesh &m)
 {
+  #if 0
   double maxVal = *(std::max_element(dists.begin(), dists.end()));
   double minVal = *(std::min_element(dists.begin(), dists.end()));
+  #else
+  double maxVal = 0.075;
+  double minVal = 0.0;
+  #endif
 
   glColor4f(0.75, 0.75, 0.75, 1.0);
   glBegin(GL_TRIANGLES);
   for(int i=0;i<m.NumFaces();++i) {
     auto face_i = m.face(i);
     int v1 = face_i[0], v2 = face_i[1], v3 = face_i[2];
-    auto norm_i = m.normal(i);
-    glNormal3d(norm_i[0], norm_i[1], norm_i[2]);
+
+    //auto norm_i = m.normal(i);
+    //glNormal3d(norm_i[0], norm_i[1], norm_i[2]);
 
     auto p1 = m.vertex(v1), p2 = m.vertex(v2), p3 = m.vertex(v3);
 
@@ -243,18 +254,24 @@ void BlendshapeVisualizer::drawMeshWithColor(const BasicMesh &m)
     QColor c0 = QColor::fromHsvF(hval0*0.67, 1.0, 1.0);
     float colors0[4] = {(float)c0.redF(), (float)c0.greenF(), (float)c0.blueF(), 1.0f};
     glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, colors0);
+    auto n1 = m.vertex_normal(v1);
+    glNormal3d(n1[0], n1[1], n1[2]);
     glVertex3d(p1[0], p1[1], p1[2]);
 
     double hval1 = 1.0 - max(min((dists[face_i[1]]-minVal)/(maxVal-minVal)/0.67, 1.0), 0.0);
     QColor c1 = QColor::fromHsvF(hval1*0.67, 1.0, 1.0);
     float colors1[4] = {(float)c1.redF(), (float)c1.greenF(), (float)c1.blueF(), 1.0f};
     glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, colors1);
+    auto n2 = m.vertex_normal(v2);
+    glNormal3d(n2[0], n2[1], n2[2]);
     glVertex3d(p2[0], p2[1], p2[2]);
 
     double hval2 = 1.0 - max(min((dists[face_i[2]]-minVal)/(maxVal-minVal)/0.67, 1.0), 0.0);
     QColor c2 = QColor::fromHsvF(hval2*0.67, 1.0, 1.0);
     float colors2[4] = {(float)c2.redF(), (float)c2.greenF(), (float)c2.blueF(), 1.0f};
     glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, colors2);
+    auto n3 = m.vertex_normal(v3);
+    glNormal3d(n3[0], n3[1], n3[2]);
     glVertex3d(p3[0], p3[1], p3[2]);
   }
   glEnd();

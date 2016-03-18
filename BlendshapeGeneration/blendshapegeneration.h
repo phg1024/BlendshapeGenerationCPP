@@ -40,6 +40,10 @@ public:
   BlendshapeGeneration(QWidget *parent = 0);
   ~BlendshapeGeneration();
 
+  void LoadMeshes(const string& mesh, const string& refmesh) {
+    canvas->loadMesh(mesh);
+    canvas->loadReferenceMesh(refmesh);
+  }
 private slots:
   void slot_loadMesh();
   void slot_loadReferenceMesh();
