@@ -144,13 +144,6 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
   //fP << P;
   //fP.close();
 
-  // the number of matrix elements in distortion term
-  int ndistortion = 0;
-  for (auto Ni : N) {
-    ndistortion += (Ni.size() + 1);
-  }
-  ndistortion *= 9;
-
   // main deformation loop
   int iters = 0;
 
@@ -159,7 +152,7 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
   double w_icp = 0, w_icp_step = ratio_data2icp;
   double w_data = 10.0*74.0/lm_points.points.nrow, w_data_step = w_data/itmax;
   double w_dist = 10000.0 * ratio_data2icp, w_dist_step = w_dist/itmax;
-  double w_prior = 0.1, w_prior_step = w_prior*0.95/itmax;
+  double w_prior = 10.0, w_prior_step = w_prior*0.95/itmax;
 
   #define ANALYZE_ONCE 1  // analyze MtM only once
   bool analyzed = false;
@@ -191,26 +184,82 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
     Efit /= npoints;
     ColorStream(ColorOutput::Red)<< "Efit = " << Efit;
 
+    // Establish vertex-index mapping
+    vertex_index_map.clear();
+    vertex_index_map.resize(S.NumVertices(), -1);
+    int vertex_index = 0;
+
+    // Add valid vertices
+    vector<int> inverse_vertex_index_map;
+    for(auto vi : valid_vertices) {
+      vertex_index_map[vi] = vertex_index;
+      inverse_vertex_index_map.push_back(vi);
+      ++vertex_index;
+    }
+
+    // Add boundary vertices
+    for(auto vi : fixed_faces_boundary_vertices) {
+      if( vertex_index_map[vi] == -1 ) {
+        vertex_index_map[vi] = vertex_index;
+        inverse_vertex_index_map.push_back(vi);
+        ++vertex_index;
+      }
+    }
+
+    // Add landmarks vertices
+    // Assume the landmarks are vertices of the valid faces
+    for(auto vi : landmarks) {
+      if( vertex_index_map[vi] == -1 ) {
+        vertex_index_map[vi] = vertex_index;
+        inverse_vertex_index_map.push_back(vi);
+        ++vertex_index;
+      }
+    }
+    const int ncols = vertex_index * 3;
+
+    cout << "ncols = " << ncols << endl;
+
     // count the total number of terms
     int nrows = 0;
     int nterms = 0;
+
     // add ICP terms
     nterms += npoints * 9;
     nrows += npoints * 3;
+
+    cout << "npoints = " << npoints << endl;
 
     // add landmarks terms
     int ndata = landmarks.size();
     nterms += ndata * 3;
     nrows += ndata * 3;
 
+    cout << "ndata = " << ndata << endl;
+
     // add prior terms
-    int nprior = S.NumVertices();
+    //int nprior = S.NumVertices();
+    int nprior = fixed_faces_boundary_vertices.size();
     nterms += nprior * 3;
     nrows += nprior * 3;
 
+    cout << "nprior = " << nprior << endl;
+
     // add distortion terms
+    // the number of matrix elements in distortion term
+    int ndistortion = 0;
+    for (int i=0;i<nverts;++i) {
+      if(vertex_index_map[i] >= 0) {
+        auto& Ni = N[i];
+        ndistortion += (Ni.size() + 1);
+      }
+    }
+    ndistortion *= 9;
+
+    cout << "ndistortion = " << valid_vertices.size() << endl;
+
     nterms += ndistortion;
-    nrows += S.NumVertices() * 3;
+    //nrows += S.NumVertices() * 3;
+    nrows += valid_vertices.size() * 3;
 
     //cout << "nterms = " << nterms << endl;
     //cout << "nrows = " << nrows << endl;
@@ -221,7 +270,7 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
     vector<Tripletd> M_coeffs;
     M_coeffs.reserve(nterms);
 
-    SparseMatrixd M(nrows, nverts*3);
+    SparseMatrixd M(nrows, ncols);
     VectorXd b = VectorXd::Zero(nrows);
     int roffset = 0;
 
@@ -237,7 +286,11 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
       auto face_t = S.face(icp_corr[i].tidx);
       int v0 = face_t[0], v1 = face_t[1], v2 = face_t[2];
 
-      int v0offset = v0 * 3, v1offset = v1 * 3, v2offset = v2 * 3;
+      //int v0offset = v0 * 3, v1offset = v1 * 3, v2offset = v2 * 3;
+      int v0offset = vertex_index_map[v0] * 3; assert(v0offset>=0);
+      int v1offset = vertex_index_map[v1] * 3; assert(v1offset>=0);
+      int v2offset = vertex_index_map[v2] * 3; assert(v2offset>=0);
+
       double wi0 = icp_corr[i].bcoords[0] * wi;
       double wi1 = icp_corr[i].bcoords[1] * wi;
       double wi2 = icp_corr[i].bcoords[2] * wi;
@@ -262,48 +315,57 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
     }
     ticp.toc("assembling ICP term");
 
-    // landmarks term term
-    //cout << "assembling landmarks terms ..." << endl;
-    PhGUtils::Timer tland;
-    tland.tic();
-    for (int i = 0, ioffset=0; i < ndata; ++i) {
-      int dstart = landmarks[i] * 3;
-      double wi = w_data;
+    #define USE_LANDMARKS 1
+    #if USE_LANDMARKS
+    {
+      // landmarks term term
+      //cout << "assembling landmarks terms ..." << endl;
+      PhGUtils::Timer tland;
+      tland.tic();
+      for (int i = 0, ioffset=0; i < ndata; ++i) {
+        //int dstart = landmarks[i] * 3;
+        int dstart = vertex_index_map[landmarks[i]] * 3;
+        assert(dstart >= 0);
 
-      /*
-      // for debugging
-      cout << "("
-           << lm_points.points(ioffset) << ","
-           << lm_points.points(ioffset+1) << ","
-           << lm_points.points(ioffset+2)
-           << ")"
-           << " vs "
-           << "("
-           << S.vertex(landmarks[i])[0] << ","
-           << S.vertex(landmarks[i])[1] << ","
-           << S.vertex(landmarks[i])[2]
-           << ") " << wi
-           << endl;
-      */
+        double wi = w_data;
 
-      M_coeffs.push_back(Tripletd(roffset, dstart, wi)); ++dstart;
-      b[roffset] = lm_points.points(ioffset) * wi;
-      ++roffset; ++ioffset;
+        /*
+        // for debugging
+        cout << "("
+             << lm_points.points(ioffset) << ","
+             << lm_points.points(ioffset+1) << ","
+             << lm_points.points(ioffset+2)
+             << ")"
+             << " vs "
+             << "("
+             << S.vertex(landmarks[i])[0] << ","
+             << S.vertex(landmarks[i])[1] << ","
+             << S.vertex(landmarks[i])[2]
+             << ") " << wi
+             << endl;
+        */
 
-      M_coeffs.push_back(Tripletd(roffset, dstart, wi)); ++dstart;
-      b[roffset] = lm_points.points(ioffset) * wi;
-      ++roffset; ++ioffset;
+        M_coeffs.push_back(Tripletd(roffset, dstart, wi)); ++dstart;
+        b[roffset] = lm_points.points(ioffset) * wi;
+        ++roffset; ++ioffset;
 
-      M_coeffs.push_back(Tripletd(roffset, dstart, wi));
-      b[roffset] = lm_points.points(ioffset) * wi;
-      ++roffset; ++ioffset;
+        M_coeffs.push_back(Tripletd(roffset, dstart, wi)); ++dstart;
+        b[roffset] = lm_points.points(ioffset) * wi;
+        ++roffset; ++ioffset;
+
+        M_coeffs.push_back(Tripletd(roffset, dstart, wi));
+        b[roffset] = lm_points.points(ioffset) * wi;
+        ++roffset; ++ioffset;
+      }
+      tland.toc("assembling landmarks term");
     }
-    tland.toc("assembling landmarks term");
+    #endif
 
     // prior term, i.e. similarity to source mesh
     //cout << "assembling prior terms ..." << endl;
     PhGUtils::Timer tprior;
     tprior.tic();
+    #if 0
     for (int i = 0, ioffset = 0; i < nprior; ++i) {
       double wi = w_prior;
       auto vert_i = S.vertex(i);
@@ -319,20 +381,45 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
       b[roffset] = vert_i[2] * wi;
       ++roffset; ++ioffset;
     }
+    #else
+    for (int i = 0; i < nprior; ++i) {
+      int vi = fixed_faces_boundary_vertices[i];
+      double wi = w_prior;
+      auto vert_i = S.vertex(vi);
+      int ioffset = vertex_index_map[vi] * 3;
+      assert(ioffset >= 0);
+
+      M_coeffs.push_back(Tripletd(roffset, ioffset, wi));
+      b[roffset] = vert_i[0] * wi;
+      ++roffset; ++ioffset;
+
+      M_coeffs.push_back(Tripletd(roffset, ioffset, wi));
+      b[roffset] = vert_i[1] * wi;
+      ++roffset; ++ioffset;
+
+      M_coeffs.push_back(Tripletd(roffset, ioffset, wi));
+      b[roffset] = vert_i[2] * wi;
+      ++roffset; ++ioffset;
+    }
+    #endif
     tprior.toc("assembling prior term");
 
     // Laplacian distortion term
     PhGUtils::Timer tdist;
     tdist.tic();
     //cout << "assembling Laplacian terms ..." << endl;
-    for (int i = 0; i < nverts; ++i) {
-      auto& Ti = Tm[i];
-      auto& Ni = N[i];
+    for (int i = 0; i < valid_vertices.size(); ++i) {
+      int vi = valid_vertices[i];
+      auto& Ti = Tm[vi];
+      auto& Ni = N[vi];
       double wi = w_dist;
 
       //cout << Ti << endl;
 
-      int istart = i * 3;
+      //int istart = i * 3;
+      int istart = vertex_index_map[vi] * 3;
+      assert(istart >= 0);
+
       // deformation part
       //M.append(roffset+istart+0, istart+0, wi);
       //M.append(roffset+istart+1, istart+1, wi);
@@ -353,7 +440,9 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
       int j = 1;
       double wij = -1.0 / Ni.size();
       for (auto Nij : Ni) {
-        int jstart = Nij * 3;
+        //int jstart = Nij * 3;
+        int jstart = vertex_index_map[Nij] * 3;
+        assert(jstart >= 0);
         int joffset = j * 3; ++j;
         //M.append(roffset+istart+0, jstart+0, wij*wi);
         //M.append(roffset+istart+1, jstart+1, wij*wi);
@@ -373,6 +462,16 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
       }
     }
     tdist.toc("assembling distortion term");
+
+    #if 0
+    {
+      ofstream fout("M.txt");
+      for(int i=0;i<M_coeffs.size();++i) {
+        fout << M_coeffs[i].row() << " " << M_coeffs[i].col() << " " << M_coeffs[i].value() << endl;
+      }
+      fout.close();
+    }
+    #endif
 
     //cout << nterms << endl;
 
@@ -406,7 +505,7 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
     VectorXd x;
 
     // FIXME try QR factorization
-    bool use_direct_solver = nverts < 50000;
+    bool use_direct_solver = true;
     if(use_direct_solver) {
       cout << "Using direct solver..." << endl;
       //cout << "Solving (M'*M)\(M'*b) ..." << endl;
@@ -432,21 +531,6 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
         cerr << "Failed to solve A\\b." << endl;
         exit(-1);
       }
-    } else {
-      cout << "Using iterative solver..." << endl;
-      // use iterative solver
-      BiCGSTAB<SparseMatrixd> solver;
-      solver.setMaxIterations(512);
-      solver.compute(MtM);
-      VectorXd x0(nverts*3);
-      for(int i=0;i<nverts;++i) {
-        x0[i*3+0] = S.vertex(i)[0];
-        x0[i*3+1] = S.vertex(i)[1];
-        x0[i*3+2] = S.vertex(i)[2];
-      }
-      x = solver.solveWithGuess(Mtb, x0);
-      std::cout << "#iterations:     " << solver.iterations() << std::endl;
-      std::cout << "estimated error: " << solver.error()      << std::endl;
     }
 
     //cout << "done." << endl;
@@ -461,11 +545,19 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
     */
 
     // update the vertices of D using the x vector
+    #if 0
     for(int i=0;i<nverts;++i) {
       D.set_vertex(i, Vector3d(x[i*3+0],
                                x[i*3+1],
                                x[i*3+2]));
     }
+    #else
+    for(int i=0;i<inverse_vertex_index_map.size();++i) {
+      D.set_vertex(inverse_vertex_index_map[i], Vector3d(x[i*3+0],
+                                                         x[i*3+1],
+                                                         x[i*3+2]));
+    }
+    #endif
 
     // update weighting factors
     // increase w_icp

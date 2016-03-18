@@ -83,7 +83,7 @@ void laplacianDeformation_pointcloud() {
   m.LoadOBJMesh(datapath + "Tester_1/Blendshape/shape_0.obj");
   m.UpdateVertices(model.GetTM());
 
-  for(int i=0;i<1;++i) {
+  for(int i=0;i<2;++i) {
     m.Write("source" + to_string(i) + ".obj");
 
     MeshDeformer deformer;
