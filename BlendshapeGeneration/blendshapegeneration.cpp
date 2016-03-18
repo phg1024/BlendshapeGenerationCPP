@@ -39,6 +39,7 @@ void BlendshapeVisualizer::loadMesh(const string &filename)
 void BlendshapeVisualizer::loadReferenceMesh(const string &filename)
 {
   refmesh.LoadOBJMesh(filename);
+  refmesh.ComputeNormals();
   computeDistance();
   repaint();
 }
@@ -155,6 +156,7 @@ void BlendshapeVisualizer::disableLighting()
   glDisable(GL_LIGHTING);
 }
 
+// TODO Add a method to compute and visualize point set to surface distance
 void BlendshapeVisualizer::computeDistance()
 {
   if( refmesh.NumFaces() <= 0 ) return;
@@ -175,6 +177,7 @@ void BlendshapeVisualizer::computeDistance()
   }
 
   Tree tree(triangles.begin(), triangles.end());
+  tree.accelerate_distance_queries();
 
   dists.resize(mesh.NumVertices());
   for(int i=0;i<mesh.NumVertices();++i) {
@@ -187,8 +190,19 @@ void BlendshapeVisualizer::computeDistance()
            qy = bestHit.first.y(),
            qz = bestHit.first.z();
 
-    double dx = px - qx, dy = py - qy, dz = pz - qz;
-    dists[i] = sqrt(dx*dx+dy*dy+dz*dz);
+    auto ref_face = *bestHit.second;
+    auto ref_normal = CGAL::normal(ref_face[0], ref_face[1],  ref_face[2]);
+    Vector3d normal0(ref_normal.x(), ref_normal.y(), ref_normal.z());
+
+    auto normal = mesh.vertex_normal(i);
+
+    if(normal.dot(normal0) < 0) {
+      dists[i] = 0;
+    } else {
+      double dx = px - qx, dy = py - qy, dz = pz - qz;
+      dists[i] = sqrt(dx*dx+dy*dy+dz*dz);
+      if(dists[i] > 0.1) dists[i] = 0;
+    }
   }
 }
 
@@ -202,6 +216,7 @@ void BlendshapeVisualizer::drawMesh(const BasicMesh &m)
     auto norm_i = m.normal(i);
     glNormal3d(norm_i[0], norm_i[1], norm_i[2]);
     auto p1 = m.vertex(v1), p2 = m.vertex(v2), p3 = m.vertex(v3);
+
     glVertex3d(p1[0], p1[1], p1[2]);
     glVertex3d(p2[0], p2[1], p2[2]);
     glVertex3d(p3[0], p3[1], p3[2]);
