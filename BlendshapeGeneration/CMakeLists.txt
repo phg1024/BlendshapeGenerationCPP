@@ -120,6 +120,18 @@ target_link_libraries(deformationtransfer
                       ioutilities
                       multilinearmodel)
 
+add_executable(expressiontransfer expressiontransfer.cpp MultilinearReconstruction/OffscreenMeshVisualizer.cpp MultilinearReconstruction/meshvisualizer.cpp)
+target_link_libraries(expressiontransfer
+                      Qt5::Core
+                      Qt5::Widgets
+                      Qt5::OpenGL
+                      CGAL
+                      ${MKLLIBS}
+                      ${PhGLib}
+                      basicmesh
+                      ioutilities
+                      multilinearmodel)
+
 link_directories(MultilinearReconstruction)
 
 add_subdirectory(MultilinearReconstruction)
