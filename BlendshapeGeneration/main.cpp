@@ -680,6 +680,15 @@ void blendShapeGeneration_pointcloud() {
   refiner.Refine();
 }
 
+void blendShapeGeneration_pointcloud_EBFR() {
+  BlendshapeRefiner refiner;
+  refiner.SetBlendshapeCount(46);
+  refiner.LoadTemplateMeshes("/home/phg/Data/FaceWarehouse_Data_0/Tester_1/Blendshape/", "shape_");
+  refiner.LoadInputReconstructionResults("/home/phg/Data/InternetRecon/yaoming/yaoming.txt");
+  refiner.LoadInputPointClouds("/home/phg/Data/InternetRecon/yaoming/SFS/");
+  refiner.Refine_EBFR();
+}
+
 void printUsage() {
   cout << "Blendshape generation: [program] -b" << endl;
   cout << "Blendshape generation with point clouds: [program] -bp" << endl;
@@ -707,6 +716,9 @@ int main(int argc, char *argv[])
   else if( option == "-bp" ) {
     blendShapeGeneration_pointcloud();
   }
+  else if( option == "-ebfr") {
+    blendShapeGeneration_pointcloud_EBFR();
+  }
   else if( option == "-v" ) {
     // visualize blendshape
     QApplication a(argc, argv);
@@ -714,6 +726,7 @@ int main(int argc, char *argv[])
     w.show();
     if(argc>3) {
       w.LoadMeshes(argv[2], argv[3]);
+      w.setWindowTitle(argv[2]);
     }
     return a.exec();
   }

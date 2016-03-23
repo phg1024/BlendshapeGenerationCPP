@@ -31,6 +31,7 @@ public:
   void LoadInputPointClouds(const string& path);
 
   void Refine();
+  void Refine_EBFR();
 
 private:
   void CreateTrainingShapes();
@@ -48,6 +49,17 @@ private:
                                        const MatrixXd& w_prior,
                                        const vector<int> stationary_indices,
                                        bool refine_neutral_only = true);
+
+  vector <BasicMesh> RefineBlendshapes_EBFR(const vector <BasicMesh> &S,
+                                            const vector <vector<PhGUtils::Matrix3x3d>> &Sgrad,
+                                            const vector <BasicMesh> &A,
+                                            const vector <BasicMesh> &B, const BasicMesh &B00,
+                                            const vector <VectorXd> &alpha,
+                                            double beta, double gamma,
+                                            const vector <vector<PhGUtils::Matrix3x3d>> &prior,
+                                            const MatrixXd& w_prior,
+                                            const vector<int> stationary_indices);
+
 
   VectorXd EstimateWeights(const BasicMesh &S,
                            const BasicMesh &B0,

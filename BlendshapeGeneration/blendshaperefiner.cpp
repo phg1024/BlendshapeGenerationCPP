@@ -96,18 +96,20 @@ void BlendshapeRefiner::CreateTrainingShapes() {
   }
   ColorStream(ColorOutput::Blue)<< "initial training shapes created.";
 
-  MeshDeformer deformer;
+
   auto& m = (*template_mesh);
   vector<int> valid_faces = m.filterFaces([&m](Vector3i fi) {
     Vector3d c = (m.vertex(fi[0]) + m.vertex(fi[1]) + m.vertex(fi[2]))/ 3.0;
     return c[2] > -0.5;
   });
-  deformer.setSource(m);
-  deformer.setValidFaces(valid_faces);
 
   S.resize(num_poses);
+  #pragma omp parallel for
   for(int i=0;i<num_poses;++i) {
     ColorStream(ColorOutput::Green)<< "creating refined training shape " << i;
+    MeshDeformer deformer;
+    deformer.setSource(m);
+    deformer.setValidFaces(valid_faces);
     deformer.setSource(S0[i]);
 
     S[i] = deformer.deformWithPoints(point_clouds[i], PointCloud(), 20);
@@ -376,7 +378,7 @@ vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> 
       b_sim = VectorXd(nrows_sim);
       for(int k=0;k<9;++k) b_sim(k) = B00grad(j, k) * w_sim;
     } else {
-      w_sim = 0.5;
+      w_sim = 0.25;
       nrows_sim = 9 * (nshapes + 1);
       ncols_sim = 9 * (nshapes + 1);
 
@@ -730,6 +732,7 @@ void BlendshapeRefiner::Refine() {
     // The reconstructed mesh are updated using the new set of blendshape
     // weights, need to use laplacian deformation to refine them again
     ColorStream(ColorOutput::Blue) << "Updating the training shapes...";
+    #pragma omp parallel for
     for(int i=0;i<num_poses;++i) {
       ColorStream(ColorOutput::Green) << "Updating training shape " << i << "...";
       auto& m = B00;
@@ -745,6 +748,421 @@ void BlendshapeRefiner::Refine() {
       S[i] = deformer.deformWithPoints(point_clouds[i], PointCloud(), 5);
       S[i].Write("S_refined_" + to_string(i) + ".obj");
     }
+
+    // compute deformation gradients for S
+    for(int i=0;i<num_poses;++i) {
+      Sgrad[i].resize(num_faces);
+      for(int j=0;j<num_faces;++j) {
+        // assign the reshaped gradient to the j-th row of Sgrad[i]
+        Sgrad[i][j] = triangleGradient(S[i], j);
+      }
+    }
+  }
+
+  // write out the blendshapes
+  for(int i=0;i<num_shapes+1;++i) {
+    B[i].Write("B_"+to_string(i)+".obj");
+  }
+
+  // write out the blendshapes
+  for(int i=0;i<num_poses;++i) {
+    S[i].Write("S_"+to_string(i)+".obj");
+  }
+}
+
+vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes_EBFR(const vector <BasicMesh> &S,
+                                                       const vector <vector<PhGUtils::Matrix3x3d>> &Sgrad,
+                                                       const vector <BasicMesh> &A,
+                                                       const vector <BasicMesh> &B, const BasicMesh &B00,
+                                                       const vector <VectorXd> &alpha,
+                                                       double beta, double gamma,
+                                                       const vector <vector<PhGUtils::Matrix3x3d>> &prior,
+                                                       const MatrixXd& w_prior,
+                                                       const vector<int> stationary_indices) {
+  int nfaces = B00.NumFaces();
+  int nverts = B00.NumVertices();
+
+  int nposes = S.size();
+  int nshapes = B.size() - 1;
+
+  // compute the deformation gradients for B00
+  Array2D<double> B00grad(nfaces, 9);
+  Array1D<double> DB0(nfaces);
+  for(int i=0;i<nfaces;++i) {
+    auto GD = triangleGradient2(B00, i);
+    auto B00i_ptr = B00grad.rowptr(i);
+    for(int k=0;k<9;++k) B00i_ptr[k] = GD.first(k);
+    DB0(i) = GD.second;
+  }
+
+  const int nrows_data = 9 * nposes;
+  const int ncols_data = 9 * nshapes;
+
+  using Tripletd = Eigen::Triplet<double>;
+  using SparseMatrixd = Eigen::SparseMatrix<double, Eigen::RowMajor>;
+  vector<Tripletd> Adata_coeffs;
+
+  const double w_data = 1.0;
+  for(int i=0;i<nposes;++i) {
+    int row_offset = i * 9;
+    for(int j=0;j<nshapes;++j) {
+      int col_offset = j * 9;
+      for(int k=0;k<9;++k) {
+        Adata_coeffs.push_back(Tripletd(row_offset+k, col_offset+k, w_data * alpha[i](j+1)));
+      }
+    }
+  }
+
+  ColorStream(ColorOutput::Blue) << "computing per-face gradients.";
+  vector<MatrixXd> M(nfaces);
+
+#pragma omp parallel for
+  for(int j=0;j<nfaces;++j) {
+    // b_data
+    VectorXd b_data(nrows_data);
+    for(int i=0;i<nposes;++i) {
+      auto Sgrad_ij = Sgrad[i][j];
+      for(int k=0;k<9;++k) b_data(i*9+k) = Sgrad_ij(k) - B00grad.rowptr(j)[k];
+    }
+    b_data *= w_data;
+
+    // A_reg
+    vector<Tripletd> Areg_coeffs;
+    const int nrows_reg = 9 * nshapes;
+    const int ncols_reg = 9 * nshapes;
+
+    const double w_reg = 1.0;
+    //MatrixXd A_reg = MatrixXd::Zero(nrows_reg, ncols_reg);
+    for(int i=0;i<nshapes;++i) {
+      int row_offset = nrows_data + i * 9;
+      int col_offset = i * 9;
+
+      const double wij = beta * w_prior(i, j);
+
+      for(int k=0;k<9;++k) {
+        Areg_coeffs.push_back(Tripletd(row_offset + k, col_offset+k, wij*w_reg));
+      }
+    }
+
+    // b_reg
+    VectorXd b_reg = VectorXd::Zero(nrows_reg);
+    auto MB0j = PhGUtils::Matrix3x3d(B00grad.rowptr(j), false);;
+    for(int i=0;i<nshapes;++i) {
+      const double wij = beta * w_prior(i, j);
+      auto Pij = prior[i][j];
+      Pij = Pij * MB0j - MB0j;
+      for(int k=0;k<9;++k) b_reg(i*9+k) = wij * Pij(k);
+    }
+
+    const int nrows_total = nrows_data + nrows_reg;
+    const int ncols_total = ncols_data;
+
+
+    //MatrixXd A(nrows_total, ncols_total);
+    //A.topRows(nrows_data) = A_data;
+    //A.middleRows(nrows_data, nrows_reg) = A_reg;
+    //A.bottomRows(nrows_sim) = A_sim;
+
+    Eigen::SparseMatrix<double> A(nrows_total, ncols_total);
+    vector<Tripletd> A_coeffs = Adata_coeffs;
+    A_coeffs.insert(A_coeffs.end(), Areg_coeffs.begin(), Areg_coeffs.end());
+
+    if(0) {
+      ofstream fA("A_coeffs.txt");
+      for(Tripletd& coeffs : A_coeffs) {
+        fA << coeffs.row() << ',' << coeffs.col() << ',' << coeffs.value() << endl;
+      }
+      fA.close();
+    }
+
+    A.setFromTriplets(A_coeffs.begin(), A_coeffs.end());
+    A.makeCompressed();
+
+    Eigen::SparseMatrix<double> AtA = (A.transpose() * A).pruned();
+
+    const double epsilon = 1e-6;
+    Eigen::SparseMatrix<double> eye(ncols_total, ncols_total);
+    for(int j=0;j<ncols_total;++j) eye.insert(j, j) = epsilon;
+    AtA += eye;
+
+    CholmodSupernodalLLT<Eigen::SparseMatrix<double>> solver;
+    solver.compute(AtA);
+
+    VectorXd b(nrows_total);
+    b.topRows(nrows_data) = b_data;
+    b.bottomRows(nrows_reg) = b_reg;
+
+    VectorXd Atb = A.transpose() * b;
+    VectorXd Mv = solver.solve(Atb);
+    if(solver.info()!=Success) {
+      cerr << "Failed to solve A\\b." << endl;
+      exit(-1);
+    }
+
+    // Store it into M
+    M[j] = MatrixXd(nshapes, 9);
+    for(int i=0;i<nshapes;++i) {
+      M[j].row(i) = Mv.middleRows(i*9, 9).transpose();
+    }
+  }
+  ColorStream(ColorOutput::Blue) << "done.";
+
+  // reconstruct the blendshapes now
+  ColorStream(ColorOutput::Blue) << "reconstructing blendshapes.";
+  MeshTransferer transferer;
+  transferer.setSource(B00);
+  transferer.setTarget(B00);
+  transferer.setStationaryVertices(stationary_indices);
+
+  vector<BasicMesh> B_new(nshapes + 1);
+
+  B_new[0] = B00;
+  auto& B0 = B_new[0];
+
+  // recovery all other shapes
+  for(int i=1;i<=nshapes;++i) {
+    ColorStream(ColorOutput::Green)<< "reconstructing blendshapes " << i;
+    vector<PhGUtils::Matrix3x3d> Bgrad_i(nfaces);
+    for(int j=0;j<nfaces;++j) {
+      auto &Mj = M[j];
+      PhGUtils::Matrix3x3d M0j(B00grad.rowptr(j), false);
+
+      PhGUtils::Matrix3x3d Mij;
+      for(int k=0;k<9;++k) Mij(k) = Mj(i-1, k);
+
+      PhGUtils::Matrix3x3d Bgrad_ij = ((Mij + M0j) * M0j.inv()).transposed();
+      for(int k=0;k<9;++k) Bgrad_i[j](k) = Bgrad_ij(k);
+    }
+    B_new[i] = transferer.transfer(Bgrad_i);
+  }
+
+  // write out the blendshapes
+  for(int i=0;i<num_shapes+1;++i) {
+    B_new[i].Write("B_refined_"+to_string(i)+".obj");
+  }
+
+  return B_new;
+}
+
+void BlendshapeRefiner::Refine_EBFR() {
+  // [Step 1]: deform the inintial training shapes with the input point clouds
+  CreateTrainingShapes();
+
+  // [Step 2]: create a set of initial blendshapes using initial neutral face mesh and template blendshapes
+  InitializeBlendshapes();
+
+  // [Step 3]: blendshape refinement
+
+  // [blendshape refinement] data preparation
+  auto& A0 = A[0];
+  int num_faces = A0.NumFaces();
+
+  auto ComputerPrior = [](const vector<BasicMesh>& A) {
+    ColorStream(ColorOutput::Blue) << "Computing prior ...";
+    auto& A0 = A[0];
+    int num_faces = A0.NumFaces();
+    int num_shapes = A.size()-1;
+    const double kappa = 0.1;
+
+    vector<PhGUtils::Matrix3x3d> MA0(num_faces);
+    for(int j=0;j<num_faces;++j) {
+      MA0[j] = triangleGradient(A0, j);
+    }
+
+    vector<vector<PhGUtils::Matrix3x3d>> prior(num_shapes, vector<PhGUtils::Matrix3x3d>(num_faces));
+    MatrixXd w_prior(num_shapes, num_faces);
+    for(int i=0;i<num_shapes;++i) {
+      // prior for shape i
+      auto &Ai = A[i+1];
+      for(int j=0;j<num_faces;++j) {
+        auto MAij = triangleGradient(Ai, j);
+        auto GA0Ai = MAij * (MA0[j].inv());
+        prior[i][j] = GA0Ai;
+        double MAij_norm = (MAij-MA0[j]).norm();
+        w_prior(i, j) = (1+MAij_norm)/pow(kappa+MAij_norm, 2.0);
+      }
+    }
+
+    return make_pair(prior, w_prior);
+  };
+
+  // Computer prior from A
+  vector<vector<PhGUtils::Matrix3x3d>> prior;
+  MatrixXd w_prior;
+  tie(prior, w_prior) = ComputerPrior(A);
+
+  /*
+  ofstream fprior("prior.txt");
+  fprior<<prior;
+  fprior.close();
+
+  ofstream fwprior("w_prior.txt");
+  fwprior<<w_prior;
+  fwprior.close();
+  */
+
+  ColorStream(ColorOutput::Blue)<< "priors computed.";
+
+  // compute the delta shapes
+  vector<MatrixX3d> dB(num_shapes);
+  for(int i=0;i<num_shapes;++i) {
+    dB[i] = B[i+1].vertices() - B[0].vertices();
+  }
+
+  // make a copy of B0 for regularization
+  BasicMesh B00 = B[0];
+  vector<int> stationary_indices = B00.filterVertices([=](const Vector3d& v) {
+    return v[2] <= -0.45;
+  });
+
+  // estimate initial set of blendshape weights
+  vector<VectorXd> alpha(num_poses);
+  for(int i=0;i<num_poses;++i) {
+    alpha[i] = image_bundles[i].params.params_model.Wexp_FACS;
+  }
+  auto alpha_init = alpha;
+
+  // compute deformation gradients for S
+  // Note: this deformation gradient cannot be used to call
+  // MeshTransferer::transfer directly. See this function for
+  // details
+  vector<vector<PhGUtils::Matrix3x3d>> Sgrad(num_poses, vector<PhGUtils::Matrix3x3d>(num_faces));
+  for(int i=0;i<num_poses;++i) {
+    for(int j=0;j<num_faces;++j) {
+      // assign the reshaped gradient to the j-th row of Sgrad[i]
+      Sgrad[i][j] = triangleGradient(S[i], j);
+    }
+  }
+
+  ColorStream(ColorOutput::Red)<< "initialization done.";
+
+  // [blendshape refinement] Main loop
+  bool converged = false;
+  double ALPHA_THRES = 1e-6;
+  double B_THRES = 1e-6;
+  double beta_max = 0.05, beta_min = 0.01;
+  double gamma_max = 0.01, gamma_min = 0.01;
+  double eta_max = 1.0, eta_min = 0.1;
+  int iters = 0;
+  const int maxIters = 2;   // This will do 2 subdivisions
+  MatrixXd B_error = MatrixXd::Zero(maxIters, num_shapes + 1);
+  MatrixXd S_error = MatrixXd::Zero(maxIters, num_poses);
+  while( !converged && iters < maxIters ){
+    cout << "iteration " << iters << " ..." << endl;
+    converged = true;
+    ++iters;
+
+    // [Step a]: Refine blendshapes
+    double beta = sqrt(iters/maxIters) * (beta_min - beta_max) + beta_max;
+    double gamma = gamma_max + iters/maxIters*(gamma_min-gamma_max);
+    double eta = eta_max + iters/maxIters*(eta_min-eta_max);
+
+    // Refine the neutral shape only
+    auto B_new = RefineBlendshapes_EBFR(S, Sgrad, A, B, B00, alpha, beta, gamma, prior, w_prior, stationary_indices);
+
+    // convergence test
+    VectorXd B_norm(num_shapes+1);
+    for(int i=0;i<=num_shapes;++i) {
+      auto Bdiff = B[i].vertices() - B_new[i].vertices();
+      B_norm(i) = Bdiff.norm();
+      B[i].vertices() = B_new[i].vertices();
+      //B{i+1} = alignMesh(B{i+1}, B{1}, stationary_indices);
+    }
+    ColorStream(ColorOutput::Green)<< "Bnorm = " << B_norm.transpose();
+    converged = converged & (B_norm.maxCoeff() < B_THRES);
+
+    // [Step b]: Update expression weights
+
+    // update delta shapes
+    for(int i=0;i<num_shapes;++i) {
+      dB[i] = B[i+1].vertices() - B[0].vertices();
+    }
+
+    // update weights
+    VectorXd alpha_norm(num_poses);
+    vector<VectorXd> alpha_new(num_poses);
+    for(int i=0;i<num_poses;++i) {
+      alpha_new[i] = EstimateWeights(S[i], B[0], dB, alpha[i], alpha_init[i], eta, 2);
+      auto alpha_diff = alpha_new[i] - alpha[i];
+      alpha_norm(i) = alpha_diff.norm();
+    }
+    alpha = alpha_new;
+    ColorStream(ColorOutput::Green)<< "norm(alpha) = " << alpha_norm.transpose();
+    converged = converged & (alpha_norm.maxCoeff() < ALPHA_THRES);
+
+    for(int i=0;i<num_poses;++i) {
+      // make a copy of B0
+      auto Ti = B[0];
+      for(int j=0;j<num_shapes;++j) {
+        Ti.vertices() += alpha[i](j+1) * dB[j];
+      }
+      //Ti = alignMesh(Ti, S0{i});
+      //S_error(iters, i) = sqrt(max(sum((Ti.vertices-S0{i}.vertices).^2, 2)));
+
+      // update the reconstructed mesh
+      S[i] = Ti;
+
+      S[i].Write("S_fitted_" + to_string(i) + ".obj");
+    }
+
+    if(iters == maxIters) break;
+
+    // Optional: subdivide all meshes
+    const bool do_subdivision = true;
+    if(do_subdivision){
+      ColorStream(ColorOutput::Blue) << "Subdividing the meshes...";
+      // Subdivide every mesh
+      // Subdivide A and update prior, w_prior, stationary_indices
+      ColorStream(ColorOutput::Blue) << "Subdividing the template meshes...";
+      for(auto &Ai : A) {
+        Ai.BuildHalfEdgeMesh();
+        Ai.Subdivide();
+      }
+      tie(prior, w_prior) = ComputerPrior(A);
+
+      // Subdivide B and B00
+      ColorStream(ColorOutput::Blue) << "Subdividing the blendshape meshes...";
+      for(auto &Bi : B) {
+        Bi.BuildHalfEdgeMesh();
+        Bi.Subdivide();
+      }
+      stationary_indices = B00.filterVertices([=](const Vector3d& v) {
+        return v[2] <= -0.45;
+      });
+      B00.BuildHalfEdgeMesh();
+      B00.Subdivide();
+
+      // Subdivide S, no need to update Sgrad because S will be deformed later
+      ColorStream(ColorOutput::Blue) << "Subdividing the training meshes...";
+      for(auto &Si : S) {
+        Si.BuildHalfEdgeMesh();
+        Si.Subdivide();
+      }
+
+      num_faces *= 4;
+    }
+
+    // The reconstructed mesh are updated using the new set of blendshape
+    // weights, need to use laplacian deformation to refine them again
+    #if 0
+    ColorStream(ColorOutput::Blue) << "Updating the training shapes...";
+    #pragma omp parallel for
+    for(int i=0;i<num_poses;++i) {
+      ColorStream(ColorOutput::Green) << "Updating training shape " << i << "...";
+      auto& m = B00;
+      MeshDeformer deformer;
+      deformer.setSource(S[i]);
+
+      vector<int> valid_faces = m.filterFaces([&m](Vector3i fi) {
+        Vector3d c = (m.vertex(fi[0]) + m.vertex(fi[1]) + m.vertex(fi[2]))/ 3.0;
+        return c[2] > -0.5;
+      });
+      deformer.setValidFaces(valid_faces);
+
+      S[i] = deformer.deformWithPoints(point_clouds[i], PointCloud(), 5);
+      S[i].Write("S_refined_" + to_string(i) + ".obj");
+    }
+    #endif
 
     // compute deformation gradients for S
     for(int i=0;i<num_poses;++i) {
