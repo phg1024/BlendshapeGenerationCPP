@@ -675,8 +675,8 @@ void blendShapeGeneration_pointcloud() {
   BlendshapeRefiner refiner;
   refiner.SetBlendshapeCount(46);
   refiner.LoadTemplateMeshes("/home/phg/Data/FaceWarehouse_Data_0/Tester_1/Blendshape/", "shape_");
-  refiner.LoadInputReconstructionResults("/home/phg/Data/InternetRecon/yaoming/yaoming.txt");
-  refiner.LoadInputPointClouds("/home/phg/Data/InternetRecon/yaoming/SFS/");
+  refiner.LoadInputReconstructionResults("/run/media/phg/Storage/Data/InternetRecon0/yaoming/yaoming.txt");
+  refiner.LoadInputPointClouds("/run/media/phg/Storage/Data/InternetRecon0/yaoming/SFS/");
   refiner.Refine();
 }
 
@@ -684,8 +684,8 @@ void blendShapeGeneration_pointcloud_EBFR() {
   BlendshapeRefiner refiner;
   refiner.SetBlendshapeCount(46);
   refiner.LoadTemplateMeshes("/home/phg/Data/FaceWarehouse_Data_0/Tester_1/Blendshape/", "shape_");
-  refiner.LoadInputReconstructionResults("/home/phg/Data/InternetRecon/yaoming/yaoming.txt");
-  refiner.LoadInputPointClouds("/home/phg/Data/InternetRecon/yaoming/SFS/");
+  refiner.LoadInputReconstructionResults("/run/media/phg/Storage/Data/InternetRecon0/yaoming/yaoming.txt");
+  refiner.LoadInputPointClouds("/run/media/phg/Storage/Data/InternetRecon0/yaoming/SFS/");
   refiner.Refine_EBFR();
 }
 
