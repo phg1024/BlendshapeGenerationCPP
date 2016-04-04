@@ -97,6 +97,31 @@ void printUsage(const string& program_name) {
   cout << "Usage: " << program_name << " from_exp" << endl;
 }
 
+void create_mesh(const string& filename) {
+  auto recon_results = LoadReconstructionResult(filename);
+  MultilinearModel model("/home/phg/Data/Multilinear/blendshape_core.tensor");
+  MultilinearModelPrior model_prior;
+  model_prior.load("/home/phg/Data/Multilinear/blendshape_u_0_aug.tensor",
+                   "/home/phg/Data/Multilinear/blendshape_u_1_aug.tensor");
+
+
+  model.ApplyWeights(recon_results.params_model.Wid, recon_results.params_model.Wexp);
+  BasicMesh mesh0("/home/phg/Data/Multilinear/template.obj");
+  mesh0.UpdateVertices(model.GetTM());
+  mesh0.ComputeNormals();
+
+  glm::dmat4 Rmat = glm::eulerAngleYXZ(recon_results.params_model.R[0],
+                                       recon_results.params_model.R[1],
+                                       recon_results.params_model.R[2]);
+  Rmat = glm::transpose(Rmat);
+  for(int i=0;i<mesh0.NumVertices();++i) {
+    auto v = mesh0.vertex(i);
+    glm::dvec4 vi = Rmat * glm::dvec4(v[0], v[1], v[2], 1);
+    mesh0.set_vertex(i, Vector3d(vi.x, vi.y, vi.z));
+  }
+  mesh0.Write("created.obj");
+}
+
 int main(int argc, char** argv) {
   QApplication app(argc, argv);
 
@@ -104,9 +129,11 @@ int main(int argc, char** argv) {
 
   if( argc < 2 ) {
     printUsage(argv[0]);
+  } else if (string(argv[1]) == "-c" ){
+    create_mesh(argv[2]);
+    return 0;
+  } else {
+    expressionTransfer(argv[1]);
+    return app.exec();
   }
-
-  expressionTransfer(argv[1]);
-
-  return app.exec();
 }

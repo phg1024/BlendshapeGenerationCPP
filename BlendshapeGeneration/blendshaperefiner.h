@@ -11,6 +11,12 @@
 #include <MultilinearReconstruction/multilinearmodel.h>
 #include <MultilinearReconstruction/parameters.h>
 
+#include "boost/filesystem/operations.hpp"
+#include "boost/filesystem/path.hpp"
+#include <boost/timer/timer.hpp>
+
+namespace fs = boost::filesystem;
+
 struct ImageBundle {
   ImageBundle() {}
   ImageBundle(const QImage& image, const vector<Constraint2D>& points, const ReconstructionResult& params)
@@ -26,9 +32,10 @@ public:
   ~BlendshapeRefiner() {}
 
   void SetBlendshapeCount(int count) { num_shapes = count; }
+  void SetResourcesPath(const string& path);
   void LoadTemplateMeshes(const string& path, const string& basename);
   void LoadInputReconstructionResults(const string& settings_filename);
-  void LoadInputPointClouds(const string& path);
+  void LoadInputPointClouds();
 
   void Refine();
   void Refine_EBFR();
@@ -69,6 +76,14 @@ private:
                            double w_prior,
                            int itmax);
 
+protected:
+  string FullFile(const fs::path& path, const string& filename) {
+    return (path / fs::path(filename)).string();
+  }
+  string InBlendshapesDirectory(const string& filename) {
+    return FullFile(blendshapes_path, filename);
+  }
+
 private:
   unique_ptr<MultilinearModel> model;
   unique_ptr<MultilinearModelPrior> model_prior;
@@ -85,6 +100,9 @@ private:
   vector<MatrixXd> point_clouds;
   vector<BasicMesh> S0;     // initial training shapes
   vector<BasicMesh> S;      // point cloud deformed training shapes
+
+  fs::path resources_path;
+  fs::path blendshapes_path;
 };
 
 #endif //FACESHAPEFROMSHADING_BLENDSHAPEREFINER_H
