@@ -3,6 +3,8 @@
 #include "meshdeformer.h"
 #include "meshtransferer.h"
 
+#include "MultilinearReconstruction/costfunctions.h"
+
 #include <eigen3/Eigen/Dense>
 #include <eigen3/Eigen/Geometry>
 #include <eigen3/Eigen/LU>
@@ -233,12 +235,29 @@ VectorXd BlendshapeRefiner::EstimateWeights(const BasicMesh &S, const BasicMesh 
       NULL, w.data()+1);
   }
 
+  /*
+  ceres::DynamicNumericDiffCostFunction<ExpressionRegularizationTerm> *reg_cost_function =
+    new ceres::DynamicNumericDiffCostFunction<ExpressionRegularizationTerm>(
+      new ExpressionRegularizationTerm(10.0)
+    );
+  reg_cost_function->AddParameterBlock(46);
+  reg_cost_function->SetNumResiduals(46);
+  problem.AddResidualBlock(reg_cost_function, NULL, w.data()+1);
+  */
+  
+  for(int i=0;i<46;++i) {
+    problem.SetParameterLowerBound(w.data()+1, i, 0.0);
+    problem.SetParameterUpperBound(w.data()+1, i, 1.0);
+  }
+
   cout << "w0 = " << endl;
   cout << w << endl;
   // set the solver options
   Solver::Options options;
   options.linear_solver_type = ceres::DENSE_QR;
   options.minimizer_progress_to_stdout = true;
+  options.num_threads = 8;
+  options.num_linear_solver_threads = 8;
 
   Solver::Summary summary;
   Solve(options, &problem, &summary);

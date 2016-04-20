@@ -11,6 +11,7 @@
 #include <MultilinearReconstruction/multilinearmodel.h>
 #include <MultilinearReconstruction/parameters.h>
 #include <MultilinearReconstruction/utils.hpp>
+#include <MultilinearReconstruction/statsutils.h>
 
 #include "blendshaperefiner.h"
 #include "meshdeformer.h"
@@ -313,6 +314,53 @@ vector<BasicMesh> refineBlendShapes(const vector<BasicMesh> &S,
   return B_new;
 }
 
+BasicMesh estimateNeutralFace(const BasicMesh& target) {
+  MultilinearModel model("/home/phg/Data/Multilinear/blendshape_core.tensor");
+  MultilinearModelPrior model_prior;
+  model_prior.load("/home/phg/Data/Multilinear/blendshape_u_0_aug.tensor",
+                   "/home/phg/Data/Multilinear/blendshape_u_1_aug.tensor");
+
+  // Just the neutral expression
+  VectorXd w_exp_FACS = VectorXd::Zero(47);
+  w_exp_FACS(0) = 1.0;
+
+  VectorXd w_exp = (w_exp_FACS.transpose() * model_prior.Uexp).eval();
+
+  model.UpdateTM1(w_exp);
+
+  Tensor2 tm1 = model.GetTM1();
+  // tm1_mat^T * w_exp -> verts
+  MatrixXd tm1_mat = tm1.GetData();
+  cout << tm1_mat.rows() << 'x' << tm1_mat.cols() << endl;
+
+  int nverts = tm1.cols() / 3;
+  VectorXd target_verts(tm1_mat.cols());
+  for(int i=0;i<nverts;++i) {
+    auto Vi = target.vertex(i);
+    target_verts(3*i) = Vi[0];
+    target_verts(3*i+1) = Vi[1];
+    target_verts(3*i+2) = Vi[2];
+  }
+
+  VectorXd wid = tm1_mat.transpose().jacobiSvd(ComputeThinU | ComputeThinV).solve(target_verts);
+
+  // perturb a little
+  double wid_0 = wid(0);
+  wid = StatsUtils::perturb(wid, 0.05);
+  wid(0) = wid_0;
+
+  VectorXd verts = (wid.transpose() * tm1_mat).transpose();
+  BasicMesh res = target;
+
+  for(int i=0;i<nverts;++i) {
+    res.set_vertex(i, Vector3d(verts(i*3), verts(i*3+1), verts(i*3+2)));
+  }
+  res.Write("Bgen.obj");
+
+  target.Write("Btgt.obj");
+  return res;
+}
+
 void blendShapeGeneration() {
   // load the meshes
   string datapath = "/home/phg/Data/FaceWarehouse_Data_0/";
@@ -338,6 +386,9 @@ void blendShapeGeneration() {
   }
 
   B[0] = B_ref[0];
+
+  BasicMesh B0est = estimateNeutralFace(B[0]);
+  exit(0);
 
   // reference shapes for convenience
   auto& A0 = A[0];
@@ -676,15 +727,15 @@ void blendShapeGeneration_pointcloud() {
   refiner.SetBlendshapeCount(46);
   refiner.LoadTemplateMeshes("/home/phg/Data/FaceWarehouse_Data_0/Tester_1/Blendshape/", "shape_");
 
-  // // yaoming
-  // refiner.SetResourcesPath("/home/phg/Storage/Data/InternetRecon0/yaoming/");
-  // refiner.LoadInputReconstructionResults("yaoming.txt");
-  // refiner.LoadInputPointClouds();
-
-  // Turing
-  refiner.SetResourcesPath("/home/phg/Storage/Data/InternetRecon2/Allen_Turing/");
-  refiner.LoadInputReconstructionResults("setting.txt");
+  // yaoming
+  refiner.SetResourcesPath("/home/phg/Storage/Data/InternetRecon0/yaoming/");
+  refiner.LoadInputReconstructionResults("yaoming.txt");
   refiner.LoadInputPointClouds();
+
+  // // Turing
+  // refiner.SetResourcesPath("/home/phg/Storage/Data/InternetRecon2/Allen_Turing/");
+  // refiner.LoadInputReconstructionResults("setting.txt");
+  // refiner.LoadInputPointClouds();
 
   refiner.Refine();
 }
@@ -694,15 +745,15 @@ void blendShapeGeneration_pointcloud_EBFR() {
   refiner.SetBlendshapeCount(46);
   refiner.LoadTemplateMeshes("/home/phg/Data/FaceWarehouse_Data_0/Tester_1/Blendshape/", "shape_");
 
-  // // yaoming
-  // refiner.SetResourcesPath("/home/phg/Storage/Data/InternetRecon0/yaoming/");
-  // refiner.LoadInputReconstructionResults("yaoming.txt");
-  // refiner.LoadInputPointClouds();
-
-  // Turing
-  refiner.SetResourcesPath("/home/phg/Storage/Data/InternetRecon2/Allen_Turing/");
-  refiner.LoadInputReconstructionResults("setting.txt");
+  // yaoming
+  refiner.SetResourcesPath("/home/phg/Storage/Data/InternetRecon0/yaoming/");
+  refiner.LoadInputReconstructionResults("yaoming.txt");
   refiner.LoadInputPointClouds();
+
+  // // Turing
+  // refiner.SetResourcesPath("/home/phg/Storage/Data/InternetRecon2/Allen_Turing/");
+  // refiner.LoadInputReconstructionResults("setting.txt");
+  // refiner.LoadInputPointClouds();
 
   refiner.Refine_EBFR();
 }

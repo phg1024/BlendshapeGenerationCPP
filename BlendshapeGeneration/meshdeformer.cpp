@@ -610,6 +610,7 @@ vector<ICPCorrespondence> MeshDeformer::findClosestPoints_tree(const MatrixX3d &
   }
 
   Tree tree(triangles.begin(), triangles.end());
+  tree.accelerate_distance_queries();
 
   vector<ICPCorrespondence> corrs(npoints);
 
