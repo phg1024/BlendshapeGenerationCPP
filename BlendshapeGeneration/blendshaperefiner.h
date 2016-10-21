@@ -34,6 +34,7 @@ public:
   void SetBlendshapeCount(int count) { num_shapes = count; }
   void SetResourcesPath(const string& path);
   void LoadTemplateMeshes(const string& path, const string& basename);
+  void LoadSelectionFile(const string& selection_filename);
   void LoadInputReconstructionResults(const string& settings_filename);
   void LoadInputPointClouds();
 
@@ -44,7 +45,7 @@ private:
   void CreateTrainingShapes();
   void InitializeBlendshapes();
 
-  MatrixXd LoadPointCloud(const string& filename);
+  MatrixXd LoadPointCloud(const string& filename, const glm::dmat4& R);
 
   vector <BasicMesh> RefineBlendshapes(const vector <BasicMesh> &S,
                                        const vector <vector<PhGUtils::Matrix3x3d>> &Sgrad,
@@ -103,6 +104,8 @@ private:
 
   fs::path resources_path;
   fs::path blendshapes_path;
+  vector<int> selection_indices;
+  map<int, int> selection_to_order_map;
 };
 
 #endif //FACESHAPEFROMSHADING_BLENDSHAPEREFINER_H

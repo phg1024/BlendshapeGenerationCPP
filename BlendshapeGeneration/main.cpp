@@ -123,6 +123,9 @@ Array1D<double> estimateWeights(const BasicMesh &S,
   options.linear_solver_type = ceres::DENSE_QR;
   options.minimizer_progress_to_stdout = true;
 
+  options.num_threads = 8;
+  options.num_linear_solver_threads = 8;
+
   Solver::Summary summary;
   Solve(options, &problem, &summary);
 
@@ -314,7 +317,7 @@ vector<BasicMesh> refineBlendShapes(const vector<BasicMesh> &S,
   return B_new;
 }
 
-BasicMesh estimateNeutralFace(const BasicMesh& target) {
+pair<VectorXd, BasicMesh> estimateNeutralFace(const BasicMesh& target) {
   MultilinearModel model("/home/phg/Data/Multilinear/blendshape_core.tensor");
   MultilinearModelPrior model_prior;
   model_prior.load("/home/phg/Data/Multilinear/blendshape_u_0_aug.tensor",
@@ -346,7 +349,7 @@ BasicMesh estimateNeutralFace(const BasicMesh& target) {
 
   // perturb a little
   double wid_0 = wid(0);
-  wid = StatsUtils::perturb(wid, 0.05);
+  wid = StatsUtils::perturb(wid, 0.1);
   wid(0) = wid_0;
 
   VectorXd verts = (wid.transpose() * tm1_mat).transpose();
@@ -358,7 +361,7 @@ BasicMesh estimateNeutralFace(const BasicMesh& target) {
   res.Write("Bgen.obj");
 
   target.Write("Btgt.obj");
-  return res;
+  return make_pair(wid, res);
 }
 
 void blendShapeGeneration() {
@@ -385,10 +388,9 @@ void blendShapeGeneration() {
     B_ref[i].LoadOBJMesh(B_path + "shape_" + to_string(i) + ".obj");
   }
 
-  B[0] = B_ref[0];
-
-  BasicMesh B0est = estimateNeutralFace(B[0]);
-  exit(0);
+  // Estimate a neutral face using the multi-linear model
+  VectorXd w_id;
+  tie(w_id, B[0]) = estimateNeutralFace(B_ref[0]);
 
   // reference shapes for convenience
   auto& A0 = A[0];
@@ -408,12 +410,12 @@ void blendShapeGeneration() {
     // compute the delta shapes of the renference shapes
     vector<MatrixX3d> dB_ref(nshapes);
     for(int i=0;i<nshapes;++i) {
-      dB_ref[i] = B_ref[i+1].vertices() - B0.vertices();
+      dB_ref[i] = B_ref[i+1].vertices() - B_ref[0].vertices();
     }
 
     // estimate the weights of the training poses using the ground truth blendshapes
     for(int i=0;i<nposes;++i) {
-      alpha_ref[i] = estimateWeights(S0[i], B0, dB_ref,
+      alpha_ref[i] = estimateWeights(S0[i], B_ref[0], dB_ref,
                                      Array1D<double>::ones(nshapes) * 0.25,
                                      Array1D<double>::zeros(nshapes),
                                      0.0, 5);
@@ -425,7 +427,7 @@ void blendShapeGeneration() {
     vector<BasicMesh> Sgen(nposes);
     for(int i=0;i<nposes;++i) {
       // make a copy of B0
-      auto Ti = B0;
+      auto Ti = B_ref[0];
       for(int j=0;j<nshapes;++j) {
         Ti.vertices() += alpha_ref[i](j) * dB_ref[j];
       }
@@ -444,13 +446,14 @@ void blendShapeGeneration() {
     for(int i=0;i<nposes;++i) alpha_ref[i] = Array1D<double>::random(nshapes);
   }
 
-  // create point clouds from S0
+  // create point clouds from Sgen
   vector<MatrixX3d> P(nposes);
   for(int i=0;i<nposes;++i) {
     P[i] = S0[i].samplePoints(4, -0.10);
     //P[i].Write("P_" + to_string(i) + ".txt");
   }
 
+#if 0
   vector<BasicMesh> S(nposes);  // meshes reconstructed from point clouds
   // use Laplacian deformation to reconstruct a set of meshes from the sampled
   // point clouds
@@ -473,6 +476,11 @@ void blendShapeGeneration() {
   }
   auto S_init = S;
   cout << "initial fitted meshes computed." << endl;
+#else
+  // Just use the synthesized shapes as ground truth
+  vector<BasicMesh> S = S0;
+  auto S_init = S;
+#endif
 
   // find the stationary set of verteces
   vector<int> stationary_indices = B0.filterVertices([=](const Vector3d& v) {
@@ -494,6 +502,9 @@ void blendShapeGeneration() {
   }
   auto B_init = B;
   ColorStream(ColorOutput::Blue)<< "initial set of blendshapes created.";
+
+  // XXX Need to refer to the blendshape refiner and change the code below to a
+  // full optimization of the entire set of blendshapes
 
   // compute deformation gradient prior from the template mesh
   ColorStream(ColorOutput::Blue)<< "computing priors.";
@@ -722,14 +733,15 @@ void blendShapeGeneration() {
   }
 }
 
-void blendShapeGeneration_pointcloud() {
+void blendShapeGeneration_pointcloud(const string& source_path) {
   BlendshapeRefiner refiner;
   refiner.SetBlendshapeCount(46);
-  refiner.LoadTemplateMeshes("/home/phg/Data/FaceWarehouse_Data_0/Tester_1/Blendshape/", "shape_");
+  refiner.LoadTemplateMeshes("/home/phg/Storage/Data/FaceWarehouse_Data_0/Tester_1/Blendshape/", "shape_");
 
   // yaoming
-  refiner.SetResourcesPath("/home/phg/Storage/Data/InternetRecon0/yaoming/");
-  refiner.LoadInputReconstructionResults("yaoming.txt");
+  refiner.SetResourcesPath(source_path);
+  refiner.LoadSelectionFile("selection.txt");
+  refiner.LoadInputReconstructionResults("settings.txt");
   refiner.LoadInputPointClouds();
 
   // // Turing
@@ -743,11 +755,11 @@ void blendShapeGeneration_pointcloud() {
 void blendShapeGeneration_pointcloud_EBFR() {
   BlendshapeRefiner refiner;
   refiner.SetBlendshapeCount(46);
-  refiner.LoadTemplateMeshes("/home/phg/Data/FaceWarehouse_Data_0/Tester_1/Blendshape/", "shape_");
+  refiner.LoadTemplateMeshes("/home/phg/Storage/Data/FaceWarehouse_Data_0/Tester_1/Blendshape/", "shape_");
 
   // yaoming
-  refiner.SetResourcesPath("/home/phg/Storage/Data/InternetRecon0/yaoming/");
-  refiner.LoadInputReconstructionResults("yaoming.txt");
+  refiner.SetResourcesPath("/home/phg/Storage/Data/InternetRecon0/yaoming/crop/");
+  refiner.LoadInputReconstructionResults("settings.txt");
   refiner.LoadInputPointClouds();
 
   // // Turing
@@ -760,7 +772,7 @@ void blendShapeGeneration_pointcloud_EBFR() {
 
 void printUsage() {
   cout << "Blendshape generation: [program] -b" << endl;
-  cout << "Blendshape generation with point clouds: [program] -bp" << endl;
+  cout << "Blendshape generation with point clouds: [program] -bp source_path" << endl;
   cout << "Blendshape visualization: [program] -v" << endl;
 }
 
@@ -783,7 +795,7 @@ int main(int argc, char *argv[])
     blendShapeGeneration();
   }
   else if( option == "-bp" ) {
-    blendShapeGeneration_pointcloud();
+    blendShapeGeneration_pointcloud(argv[2]);
   }
   else if( option == "-ebfr") {
     blendShapeGeneration_pointcloud_EBFR();

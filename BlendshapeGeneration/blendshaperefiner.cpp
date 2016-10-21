@@ -51,10 +51,50 @@ void BlendshapeRefiner::LoadTemplateMeshes(const string &path, const string &bas
   }
 }
 
+void BlendshapeRefiner::LoadSelectionFile(const string& selection_filename) {
+  selection_indices = LoadIndices((resources_path / fs::path(selection_filename)).string());
+
+  for(auto idx : selection_indices) {
+    selection_to_order_map[idx] = -1;
+  }
+}
+
+namespace {
+  int getIndex(const string& filename) {
+    istringstream iss(filename);
+    std::vector<std::string> tokens;
+    std::string token;
+    while (std::getline(iss, token, '.')) {
+        if (!token.empty())
+            tokens.push_back(token);
+    }
+    return std::stoi(tokens[0]);
+  }
+}
+
 void BlendshapeRefiner::LoadInputReconstructionResults(const string &settings_filename) {
   vector<pair<string, string>> image_points_filenames = ParseSettingsFile( (resources_path / fs::path(settings_filename)).string() );
 
+  image_bundles.resize(selection_indices.size());
+  int order = 0;
   for(auto& p : image_points_filenames) {
+    int img_idx = getIndex(p.first);
+    if( selection_to_order_map.find(img_idx) == selection_to_order_map.end() ) {
+      ++order;
+      continue;
+    }
+
+    int selector_order = -1;
+    for(int j=0;j<selection_indices.size();++j) {
+      if(selection_indices[j] == img_idx) {
+        selector_order = j;
+        break;
+      }
+    }
+
+    cout << p.first << endl;
+    selection_to_order_map[img_idx] = order++;
+
     fs::path image_filename = resources_path / fs::path(p.first);
     fs::path pts_filename = resources_path / fs::path(p.second);
     fs::path res_filename = resources_path / fs::path(p.first + ".res");
@@ -62,26 +102,33 @@ void BlendshapeRefiner::LoadInputReconstructionResults(const string &settings_fi
 
     auto image_points_pair = LoadImageAndPoints(image_filename.string(), pts_filename.string());
     auto recon_results = LoadReconstructionResult(res_filename.string());
-    image_bundles.push_back(ImageBundle(image_points_pair.first, image_points_pair.second, recon_results));
+    image_bundles[selector_order] = (ImageBundle(image_points_pair.first, image_points_pair.second, recon_results));
   }
+  //utils::pause();
 
   // Set the number of poses
-  num_poses = image_points_filenames.size();
+  num_poses = selection_indices.size();
 }
 
-MatrixXd BlendshapeRefiner::LoadPointCloud(const string &filename) {
+MatrixXd BlendshapeRefiner::LoadPointCloud(const string &filename, const glm::dmat4& Rmat_inv) {
   ifstream fin(filename);
   vector<Vector3d> points;
   points.reserve(100000);
   while(fin) {
     double x, y, z;
     fin >> x >> y >> z;
-    points.push_back(Vector3d(x, y, z));
+
+    // rotate the input point cloud to regular view
+    glm::dvec4 pt0 =  Rmat_inv * glm::dvec4(x, y, z, 1.0);
+
+    points.push_back(Vector3d(pt0.x, pt0.y, pt0.z));
   }
+
   MatrixXd P(points.size(), 3);
   for(int i=0;i<points.size();++i) {
     P.row(i) = points[i];
   }
+
   return P;
 }
 
@@ -89,7 +136,24 @@ void BlendshapeRefiner::LoadInputPointClouds() {
   // Load all points files
   point_clouds.resize(num_poses);
   for(int i=0;i<num_poses;++i) {
-    point_clouds[i] = LoadPointCloud( (resources_path / fs::path("SFS") / fs::path("point_cloud_opt_raw" + to_string(i) + ".txt")).string() );
+    int img_idx = selection_indices[i];
+    int point_cloud_idx = selection_to_order_map[img_idx];
+    assert(point_cloud_idx != -1);
+
+    bool need_rotation = true;
+    glm::dmat4 R;
+    if(need_rotation) {
+      // Need to rotate the points back to frontal view
+      glm::dmat4 Rmat_inv = glm::eulerAngleZ(-image_bundles[i].params.params_model.R[2])
+                          * glm::eulerAngleX(-image_bundles[i].params.params_model.R[1])
+                          * glm::eulerAngleY(-image_bundles[i].params.params_model.R[0]);
+      R = Rmat_inv;
+    } else {
+      // just use the identity matrix
+    }
+
+    point_clouds[i] = LoadPointCloud( (resources_path / fs::path("SFS") / fs::path("optimized_point_cloud_" + to_string(point_cloud_idx) + ".txt")).string(),
+                                      R );
   }
 }
 
@@ -244,7 +308,7 @@ VectorXd BlendshapeRefiner::EstimateWeights(const BasicMesh &S, const BasicMesh 
   reg_cost_function->SetNumResiduals(46);
   problem.AddResidualBlock(reg_cost_function, NULL, w.data()+1);
   */
-  
+
   for(int i=0;i<46;++i) {
     problem.SetParameterLowerBound(w.data()+1, i, 0.0);
     problem.SetParameterUpperBound(w.data()+1, i, 1.0);
@@ -254,10 +318,16 @@ VectorXd BlendshapeRefiner::EstimateWeights(const BasicMesh &S, const BasicMesh 
   cout << w << endl;
   // set the solver options
   Solver::Options options;
-  options.linear_solver_type = ceres::DENSE_QR;
-  options.minimizer_progress_to_stdout = true;
+
+  options.max_num_iterations = 10;
   options.num_threads = 8;
   options.num_linear_solver_threads = 8;
+
+  options.initial_trust_region_radius = 1.0;
+  options.min_lm_diagonal = 1.0;
+  options.max_lm_diagonal = 1.0;
+
+  options.minimizer_progress_to_stdout = true;
 
   Solver::Summary summary;
   Solve(options, &problem, &summary);
