@@ -13,6 +13,14 @@ public:
   BlendshapeVisualizer(QWidget *parent = 0);
   ~BlendshapeVisualizer();
 
+  virtual QSize sizeHint() const {
+    return QSize(600, 600);
+  }
+
+  virtual QSize minimumSizeHint() const {
+    return QSize(600, 600);
+  }
+
   void loadMesh(const string &filename);
   void loadReferenceMesh(const string &filename);
 
@@ -40,10 +48,26 @@ public:
   BlendshapeGeneration(QWidget *parent = 0);
   ~BlendshapeGeneration();
 
+  virtual QSize sizeHint() const {
+    return QSize(600, 600);
+  }
+
   void LoadMeshes(const string& mesh, const string& refmesh) {
     canvas->loadMesh(mesh);
     canvas->loadReferenceMesh(refmesh);
+    canvas->repaint();
   }
+
+  void LoadMesh(const string& mesh) {
+    canvas->loadMesh(mesh);
+    canvas->repaint();
+  }
+
+  void Save(const string& filename) {
+    QImage pixmap = canvas->grabFrameBuffer();
+    pixmap.save(filename.c_str());
+  }
+
 private slots:
   void slot_loadMesh();
   void slot_loadReferenceMesh();

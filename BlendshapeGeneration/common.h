@@ -29,6 +29,8 @@
 #include <boost/shared_ptr.hpp>
 using boost::shared_ptr;
 #endif
+#include <thread>
+#include <chrono>
 
 using namespace std;
 

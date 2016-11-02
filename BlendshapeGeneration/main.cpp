@@ -808,8 +808,30 @@ int main(int argc, char *argv[])
     if(argc>3) {
       w.LoadMeshes(argv[2], argv[3]);
       w.setWindowTitle(argv[2]);
+    } else if(argc>2) {
+      w.LoadMesh(argv[2]);
+      w.setWindowTitle(argv[2]);
     }
     return a.exec();
+  } else if (option == "-vs") {
+    // visualize and save the result
+    QApplication a(argc, argv);
+    BlendshapeGeneration w;
+    w.show();
+    if(argc>4) {
+      w.LoadMeshes(argv[2], argv[3]);
+      w.setWindowTitle(argv[2]);
+    } else if(argc>3) {
+      w.LoadMesh(argv[2]);
+      w.setWindowTitle(argv[2]);
+    }
+    w.repaint();
+    for(int i=0;i<10;++i)
+      qApp->processEvents();
+
+    w.Save(string(argv[argc-1]));
+    qApp->processEvents();
+    return 0;
   }
 
   return 0;
