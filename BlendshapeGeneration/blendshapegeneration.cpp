@@ -19,7 +19,8 @@ typedef CGAL::AABB_tree<AABB_triangle_traits> Tree;
 BlendshapeVisualizer::BlendshapeVisualizer(QWidget *parent):
   GL3DCanvas(parent)
 {
-  setSceneScale(2.0);
+  setSceneScale(1.25);
+  setProjectionMode(GL3DCanvas::ORTHONGONAL);
   mouseInteractionMode = GL3DCanvas::VIEW_TRANSFORM;
 }
 
@@ -63,7 +64,7 @@ void BlendshapeVisualizer::paintGL()
     double maxVal = (*std::max_element(dists.begin(), dists.end()));
     #else
     double minVal = 0.0;
-    double maxVal = 0.075;
+    double maxVal = 0.150;
     #endif
     string minStr = "min: " + to_string(minVal);
     string maxStr = "max: " + to_string(maxVal);
@@ -134,19 +135,19 @@ void BlendshapeVisualizer::enableLighting()
   GLfloat light_ambient[] = {0.05, 0.05, 0.05, 1.0};
   GLfloat white_light[] = {1.0, 1.0, 1.0, 1.0};
 
-  glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, mat_specular);
+  //glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, mat_specular);
   glMaterialfv(GL_FRONT_AND_BACK, GL_SHININESS, mat_shininess);
   glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, mat_diffuse);
 
   glLightfv(GL_LIGHT0, GL_POSITION, light_position);
   glLightfv(GL_LIGHT0, GL_DIFFUSE, white_light);
-  glLightfv(GL_LIGHT0, GL_SPECULAR, white_light);
+  //glLightfv(GL_LIGHT0, GL_SPECULAR, white_light);
   glLightfv(GL_LIGHT0, GL_AMBIENT, light_ambient);
 
   light_position[0] = -10.0;
   glLightfv(GL_LIGHT1, GL_POSITION, light_position);
   glLightfv(GL_LIGHT1, GL_DIFFUSE, white_light);
-  glLightfv(GL_LIGHT1, GL_SPECULAR, white_light);
+  //glLightfv(GL_LIGHT1, GL_SPECULAR, white_light);
   glLightfv(GL_LIGHT1, GL_AMBIENT, light_ambient);
 
   glEnable(GL_LIGHTING);
@@ -202,11 +203,11 @@ void BlendshapeVisualizer::computeDistance()
     auto normal = mesh.vertex_normal(i);
 
     if(normal.dot(normal0) < 0) {
-      dists[i] = 0;
+      dists[i] = -1;
     } else {
       double dx = px - qx, dy = py - qy, dz = pz - qz;
       dists[i] = sqrt(dx*dx+dy*dy+dz*dz);
-      if(dists[i] > 0.1) dists[i] = 0;
+      if(dists[i] > 0.1) dists[i] = -1;
     }
   }
 }
@@ -235,7 +236,7 @@ void BlendshapeVisualizer::drawMeshWithColor(const BasicMesh &m)
   double maxVal = *(std::max_element(dists.begin(), dists.end()));
   double minVal = *(std::min_element(dists.begin(), dists.end()));
   #else
-  double maxVal = 0.075;
+  double maxVal = 0.150;
   double minVal = 0.0;
   #endif
 
@@ -250,7 +251,30 @@ void BlendshapeVisualizer::drawMeshWithColor(const BasicMesh &m)
 
     auto p1 = m.vertex(v1), p2 = m.vertex(v2), p3 = m.vertex(v3);
 
+    auto draw_vertex = [&](double dval, decltype(p1) pj, int vj) {
+      double hval0 = 1.0 - max(min((dval-minVal)/(maxVal-minVal)/0.67, 1.0), 0.0);
+      if(dval < 0) {
+        hval0 = 0.0;
+      }
+      QColor c0 = QColor::fromHsvF(hval0*0.67, 1.0, 1.0);
+      float colors0[4] = {(float)c0.redF(), (float)c0.greenF(), (float)c0.blueF(), 1.0f};
+      glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, colors0);
+      auto nj = m.vertex_normal(vj);
+      glNormal3d(nj[0], nj[1], nj[2]);
+      glVertex3d(pj[0], pj[1], pj[2]);
+    };
+
+#if 1
+
+    draw_vertex(dists[face_i[0]], p1, v1);
+    draw_vertex(dists[face_i[1]], p2, v2);
+    draw_vertex(dists[face_i[2]], p3, v3);
+
+#else
     double hval0 = 1.0 - max(min((dists[face_i[0]]-minVal)/(maxVal-minVal)/0.67, 1.0), 0.0);
+    if(dists[face_i[0]] < 0) {
+      hval0 = 1.0;
+    }
     QColor c0 = QColor::fromHsvF(hval0*0.67, 1.0, 1.0);
     float colors0[4] = {(float)c0.redF(), (float)c0.greenF(), (float)c0.blueF(), 1.0f};
     glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, colors0);
@@ -259,6 +283,9 @@ void BlendshapeVisualizer::drawMeshWithColor(const BasicMesh &m)
     glVertex3d(p1[0], p1[1], p1[2]);
 
     double hval1 = 1.0 - max(min((dists[face_i[1]]-minVal)/(maxVal-minVal)/0.67, 1.0), 0.0);
+    if(dists[face_i[0]] < 0) {
+      hval1 = 1.0;
+    }
     QColor c1 = QColor::fromHsvF(hval1*0.67, 1.0, 1.0);
     float colors1[4] = {(float)c1.redF(), (float)c1.greenF(), (float)c1.blueF(), 1.0f};
     glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, colors1);
@@ -267,12 +294,16 @@ void BlendshapeVisualizer::drawMeshWithColor(const BasicMesh &m)
     glVertex3d(p2[0], p2[1], p2[2]);
 
     double hval2 = 1.0 - max(min((dists[face_i[2]]-minVal)/(maxVal-minVal)/0.67, 1.0), 0.0);
+    if(dists[face_i[0]] < 0) {
+      hval2 = 1.0;
+    }
     QColor c2 = QColor::fromHsvF(hval2*0.67, 1.0, 1.0);
     float colors2[4] = {(float)c2.redF(), (float)c2.greenF(), (float)c2.blueF(), 1.0f};
     glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, colors2);
     auto n3 = m.vertex_normal(v3);
     glNormal3d(n3[0], n3[1], n3[2]);
     glVertex3d(p3[0], p3[1], p3[2]);
+#endif
   }
   glEnd();
 }
