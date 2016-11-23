@@ -28,11 +28,16 @@ struct ImageBundle {
 
 class BlendshapeRefiner {
 public:
-  BlendshapeRefiner();
+  BlendshapeRefiner(bool use_init_blendshapes=false);
   ~BlendshapeRefiner() {}
 
   void SetBlendshapeCount(int count) { num_shapes = count; }
   void SetResourcesPath(const string& path);
+  void SetReconstructionsPath(const string& path);
+  void SetPointCloudsPath(const string& path);
+  void SetInputBlendshapesPath(const string& path);
+  void SetBlendshapesPath(const string& path);
+
   void LoadTemplateMeshes(const string& path, const string& basename);
   void LoadSelectionFile(const string& selection_filename);
   void LoadInputReconstructionResults(const string& settings_filename);
@@ -42,6 +47,7 @@ public:
   void Refine_EBFR();
 
 private:
+  void LoadInitialBlendshapes();
   void CreateTrainingShapes();
   void InitializeBlendshapes();
 
@@ -93,16 +99,17 @@ private:
   int num_shapes;
   vector<BasicMesh> A;      // template blendshapes
 
-  vector<BasicMesh> Binit;  // transferred blendshapes
+  vector<BasicMesh> Binit;  // transferred/initial blendshapes
   vector<BasicMesh> B;      // refined blendshapes
 
   int num_poses;
+  bool use_init_blendshapes;
   vector<ImageBundle> image_bundles;
   vector<MatrixXd> point_clouds;
   vector<BasicMesh> S0;     // initial training shapes
   vector<BasicMesh> S;      // point cloud deformed training shapes
 
-  fs::path resources_path;
+  fs::path resources_path, reconstructions_path, point_clouds_path, input_blendshapes_path;
   fs::path blendshapes_path;
   vector<int> selection_indices;
   map<int, int> selection_to_order_map;

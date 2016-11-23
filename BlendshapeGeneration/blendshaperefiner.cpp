@@ -19,7 +19,8 @@ namespace utils {
   }
 }
 
-BlendshapeRefiner::BlendshapeRefiner() {
+BlendshapeRefiner::BlendshapeRefiner(bool use_init_blendshapes)
+ : use_init_blendshapes(use_init_blendshapes) {
   model.reset(new MultilinearModel("/home/phg/Data/Multilinear/blendshape_core.tensor"));
   model_prior.reset(new MultilinearModelPrior());
   model_prior->load("/home/phg/Data/Multilinear/blendshape_u_0_aug.tensor",
@@ -30,17 +31,39 @@ BlendshapeRefiner::BlendshapeRefiner() {
 void BlendshapeRefiner::SetResourcesPath(const string& path) {
   cout << "Setting resources path to " << path << endl;
   resources_path = fs::path(path);
-  blendshapes_path = resources_path / fs::path("blendshapes");
+  cout << "done." << endl;
+}
+
+void BlendshapeRefiner::SetReconstructionsPath(const string& path) {
+  cout << "Setting reconstructions path to " << path << endl;
+  reconstructions_path = fs::path(path);
+  cout << "done." << endl;
+}
+
+void BlendshapeRefiner::SetPointCloudsPath(const string& path) {
+  cout << "Setting point clouds path to " << path << endl;
+  point_clouds_path = fs::path(path);
+  cout << "done." << endl;
+}
+
+void BlendshapeRefiner::SetInputBlendshapesPath(const string& path) {
+  cout << "Setting input blendshapes path to " << path << endl;
+  input_blendshapes_path = fs::path(path);
+  cout << "done." << endl;
+}
+
+void BlendshapeRefiner::SetBlendshapesPath(const string& path) {
+  cout << "Setting blendshapes path to " << path << endl;
+  blendshapes_path = fs::path(path);
   if(!fs::exists(blendshapes_path)) {
     try{
-      cout << "Creating blendshapes director " << blendshapes_path.string() << endl;
+      cout << "Creating blendshapes directory " << blendshapes_path.string() << endl;
       fs::create_directory(blendshapes_path);
     } catch(exception& e) {
       cout << e.what() << endl;
       exit(1);
     }
   }
-  cout << "done." << endl;
 }
 
 void BlendshapeRefiner::LoadTemplateMeshes(const string &path, const string &basename) {
@@ -48,6 +71,14 @@ void BlendshapeRefiner::LoadTemplateMeshes(const string &path, const string &bas
 
   for(int i=0;i<=num_shapes;++i) {
     A[i].LoadOBJMesh(path + basename + to_string(i) + ".obj");
+  }
+}
+
+void BlendshapeRefiner::LoadInitialBlendshapes() {
+  Binit.resize(num_shapes + 1);
+
+  for(int i=0;i<=num_shapes;++i) {
+    Binit[i].LoadOBJMesh( (input_blendshapes_path / fs::path("B_" + to_string(i) + ".obj")).string() );
   }
 }
 
@@ -97,7 +128,7 @@ void BlendshapeRefiner::LoadInputReconstructionResults(const string &settings_fi
 
     fs::path image_filename = resources_path / fs::path(p.first);
     fs::path pts_filename = resources_path / fs::path(p.second);
-    fs::path res_filename = resources_path / fs::path(p.first + ".res");
+    fs::path res_filename = reconstructions_path / fs::path(p.first + ".res");
     cout << "[" << image_filename << ", " << pts_filename << "]" << endl;
 
     auto image_points_pair = LoadImageAndPoints(image_filename.string(), pts_filename.string());
@@ -152,8 +183,25 @@ void BlendshapeRefiner::LoadInputPointClouds() {
       // just use the identity matrix
     }
 
-    point_clouds[i] = LoadPointCloud( (resources_path / fs::path("SFS") / fs::path("optimized_point_cloud_" + to_string(point_cloud_idx) + ".txt")).string(),
+    point_clouds[i] = LoadPointCloud( (point_clouds_path / fs::path("masked_optimized_point_cloud_" + to_string(point_cloud_idx) + ".txt")).string(),
                                       R );
+  }
+}
+
+namespace {
+  void ApplyWeights(
+    BasicMesh& mesh,
+    const vector<BasicMesh>& blendshapes,
+    const VectorXd& weights
+  ) {
+    const int num_blendshapes = 46;
+    MatrixX3d verts0 = blendshapes[0].vertices();
+    MatrixX3d verts = verts0;
+    for(int j=1;j<=num_blendshapes;++j) {
+      verts += (blendshapes[j].vertices() - verts0) * weights(j);
+    }
+    mesh.vertices() = verts;
+    mesh.ComputeNormals();
   }
 }
 
@@ -161,9 +209,17 @@ void BlendshapeRefiner::CreateTrainingShapes() {
   S0.resize(num_poses);
   for(int i=0;i<num_poses;++i) {
     ColorStream(ColorOutput::Green)<< "creating initial training shape " << i;
-    model->ApplyWeights(image_bundles[i].params.params_model.Wid, image_bundles[i].params.params_model.Wexp);
     S0[i] = *template_mesh;
-    S0[i].UpdateVertices(model->GetTM());
+
+    if(use_init_blendshapes) {
+      // Synthesize from initial blendshapes
+      ApplyWeights(S0[i], Binit, image_bundles[i].params.params_model.Wexp_FACS);
+    } else {
+      // Synthesize from multilinear model
+      model->ApplyWeights(image_bundles[i].params.params_model.Wid, image_bundles[i].params.params_model.Wexp);
+      S0[i].UpdateVertices(model->GetTM());
+    }
+
     S0[i].ComputeNormals();
     S0[i].Write( InBlendshapesDirectory("Sinit_" + to_string(i) + ".obj") );
   }
@@ -192,32 +248,37 @@ void BlendshapeRefiner::CreateTrainingShapes() {
 }
 
 void BlendshapeRefiner::InitializeBlendshapes() {
-  // Create the initial neutral face mesh
-  model->ApplyWeights(image_bundles[0].params.params_model.Wid, model_prior->Wexp0);
+  if(use_init_blendshapes) {
+    // Nothing to do
+  } else {
+    // Create the initial neutral face mesh
+    model->ApplyWeights(image_bundles[0].params.params_model.Wid, model_prior->Wexp0);
 
-  Binit.resize(A.size());
-  Binit[0] = *template_mesh;
-  Binit[0].UpdateVertices(model->GetTM());
-  Binit[0].ComputeNormals();
+    Binit.resize(A.size());
+    Binit[0] = *template_mesh;
+    Binit[0].UpdateVertices(model->GetTM());
+    Binit[0].ComputeNormals();
 
-  Binit[0].Write( InBlendshapesDirectory("Binit_0.obj") );
+    Binit[0].Write( InBlendshapesDirectory("Binit_0.obj") );
 
-  // Deformation transfer to obtain all other blendshapes
-  auto& B0 = Binit[0];
-  vector<int> stationary_indices = B0.filterVertices([=](const Vector3d& v) {
-    return v[2] <= -0.45;
-  });
-  auto& A0 = A[0];
-  MeshTransferer transferer;
-  transferer.setSource(A0); // set source and compute deformation gradient
-  transferer.setTarget(B0); // set target and compute deformation gradient
-  transferer.setStationaryVertices(stationary_indices);
+    // Deformation transfer to obtain all other blendshapes
+    auto& B0 = Binit[0];
+    vector<int> stationary_indices = B0.filterVertices([=](const Vector3d& v) {
+      return v[2] <= -0.45;
+    });
+    auto& A0 = A[0];
+    MeshTransferer transferer;
+    transferer.setSource(A0); // set source and compute deformation gradient
+    transferer.setTarget(B0); // set target and compute deformation gradient
+    transferer.setStationaryVertices(stationary_indices);
 
-  for(int i=1;i<=num_shapes;++i) {
-    ColorStream(ColorOutput::Green)<< "creating shape " << i;
-    Binit[i] = transferer.transfer(A[i]);
-    Binit[i].Write( InBlendshapesDirectory("Binit_" + to_string(i) + ".obj") );
+    for(int i=1;i<=num_shapes;++i) {
+      ColorStream(ColorOutput::Green)<< "creating shape " << i;
+      Binit[i] = transferer.transfer(A[i]);
+      Binit[i].Write( InBlendshapesDirectory("Binit_" + to_string(i) + ".obj") );
+    }
   }
+
   B = Binit;
   ColorStream(ColorOutput::Blue)<< "initial set of blendshapes created.";
 
@@ -625,6 +686,9 @@ vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> 
 }
 
 void BlendshapeRefiner::Refine() {
+  // [Step 0]: load initial blendshapes if possible
+  if(use_init_blendshapes) LoadInitialBlendshapes();
+
   // [Step 1]: deform the inintial training shapes with the input point clouds
   CreateTrainingShapes();
 
@@ -791,7 +855,7 @@ void BlendshapeRefiner::Refine() {
     if(iters == maxIters) break;
 
     // Optional: subdivide all meshes
-    const bool do_subdivision = true;
+    const bool do_subdivision = false;
     if(do_subdivision){
       ColorStream(ColorOutput::Blue) << "Subdividing the meshes...";
       // Subdivide every mesh

@@ -738,8 +738,41 @@ void blendShapeGeneration_pointcloud(const string& source_path) {
   refiner.SetBlendshapeCount(46);
   refiner.LoadTemplateMeshes("/home/phg/Storage/Data/FaceWarehouse_Data_0/Tester_1/Blendshape/", "shape_");
 
-  // yaoming
   refiner.SetResourcesPath(source_path);
+  refiner.SetReconstructionsPath(source_path);
+  refiner.SetPointCloudsPath(source_path + "/SFS");
+  refiner.SetInputBlendshapesPath("/home/phg/Storage/Data/FaceWarehouse_Data_0/Tester_1/Blendshape/");
+  refiner.SetBlendshapesPath(source_path + "/blendshapes");
+
+  refiner.LoadSelectionFile("selection.txt");
+  refiner.LoadInputReconstructionResults("settings.txt");
+  refiner.LoadInputPointClouds();
+
+  // // Turing
+  // refiner.SetResourcesPath("/home/phg/Storage/Data/InternetRecon2/Allen_Turing/");
+  // refiner.LoadInputReconstructionResults("setting.txt");
+  // refiner.LoadInputPointClouds();
+
+  refiner.Refine();
+}
+
+void blendShapeGeneration_pointcloud_blendshapes(
+  const string& source_path,
+  const string& recon_path,
+  const string& point_clouds_path,
+  const string& input_blendshapes_path,
+  const string& blendshapes_path
+) {
+  BlendshapeRefiner refiner(true);
+  refiner.SetBlendshapeCount(46);
+  refiner.LoadTemplateMeshes("/home/phg/Storage/Data/FaceWarehouse_Data_0/Tester_1/Blendshape/", "shape_");
+
+  refiner.SetResourcesPath(source_path);
+  refiner.SetReconstructionsPath(recon_path);
+  refiner.SetPointCloudsPath(point_clouds_path);
+  refiner.SetInputBlendshapesPath(input_blendshapes_path);
+  refiner.SetBlendshapesPath(blendshapes_path);
+
   refiner.LoadSelectionFile("selection.txt");
   refiner.LoadInputReconstructionResults("settings.txt");
   refiner.LoadInputPointClouds();
@@ -773,6 +806,7 @@ void blendShapeGeneration_pointcloud_EBFR() {
 void printUsage() {
   cout << "Blendshape generation: [program] -b" << endl;
   cout << "Blendshape generation with point clouds: [program] -bp source_path" << endl;
+  cout << "Blendshape generation with point clouds and initial blendshapes: [program] -bs source_path recon_path point_cloud_path init_blendshapes_path blendshapes_path" << endl;
   cout << "Blendshape visualization: [program] -v" << endl;
 }
 
@@ -796,6 +830,10 @@ int main(int argc, char *argv[])
   }
   else if( option == "-bp" ) {
     blendShapeGeneration_pointcloud(argv[2]);
+  }
+  else if( option == "-bs") {
+    blendShapeGeneration_pointcloud_blendshapes(
+      argv[2], argv[3], argv[4], argv[5], argv[6]);
   }
   else if( option == "-ebfr") {
     blendShapeGeneration_pointcloud_EBFR();

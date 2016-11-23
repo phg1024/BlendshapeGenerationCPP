@@ -19,7 +19,7 @@ typedef CGAL::AABB_tree<AABB_triangle_traits> Tree;
 BlendshapeVisualizer::BlendshapeVisualizer(QWidget *parent):
   GL3DCanvas(parent)
 {
-  setSceneScale(1.25);
+  setSceneScale(1.5);
   setProjectionMode(GL3DCanvas::ORTHONGONAL);
   mouseInteractionMode = GL3DCanvas::VIEW_TRANSFORM;
 }
