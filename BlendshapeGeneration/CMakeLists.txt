@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 2.8.11)
 
-project(FaceShapeFromShading)
+project(BlendshapeGeneration)
 
 # Find includes in corresponding build directories
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
@@ -28,7 +28,9 @@ link_libraries(${Boost_LIBRARIES} -lboost_filesystem -lboost_system)
 # OpenMP
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp")
 
+# OpenCV
 find_package( OpenCV REQUIRED )
+message("-- ${OPENCV_LIBS}")
 link_libraries(${OpenCV_LIBS})
 
 # OpenGL
@@ -44,22 +46,26 @@ if (GLEW_FOUND)
 endif()
 
 # GLI
-find_package(GLI REQUIRED)
-if (GLI_FOUND)
-    message([] ${GLI_INCLUDE_DIRS})
-    include_directories(${GLI_INCLUDE_DIRS})
-endif()
+#find_package(GLI REQUIRED)
+#if (GLI_FOUND)
+#    message([] ${GLI_INCLUDE_DIRS})
+#    include_directories(${GLI_INCLUDE_DIRS})
+#endif()
 
 # Eigen
-set(EIGEN_INCLUDE_DIR /usr/include/eigen3)
+find_package(Eigen)
 include_directories(${EIGEN_INCLUDE_DIR})
 
+# SuiteSparse
+set(SUITESPARSE_INCLUDE_DIR "/usr/include/suitesparse")
+include_directories(${SUITESPARSE_INCLUDE_DIR})
+
 # MKL
-set(MKL_INCLUDE_DIRS "/home/phg/SDKs/intel/composer_xe/include")
+set(MKL_INCLUDE_DIRS "/opt/intel/mkl/include")
 message([] ${MKL_INCLUDE_DIRS} )
 include_directories(${MKL_INCLUDE_DIRS})
-set(MKLROOT "/home/phg/SDKs/intel/composer_xe_2015/mkl")
-set(MKLLIBS_DIRS "${MKLROOT}/lib/intel64/")
+set(MKLROOT "/opt/intel/mkl")
+set(MKLLIBS_DIRS "${MKLROOT}/lib/intel64/" "/opt/intel/lib/intel64_lin")
 link_directories(${MKLLIBS_DIRS})
 set(MKLLIBS "-Wl,--start-group -lmkl_intel_lp64 -lmkl_core -lmkl_intel_thread -Wl,--end-group -liomp5 -ldl -lpthread -lm")
 
@@ -91,6 +97,7 @@ target_link_libraries(BlendshapeGeneration
                       Qt5::OpenGL
                       CGAL
                       ${MKLLIBS}
+                      ${OPENCV_LIBS}
                       ${PhGLib}
                       basicmesh
                       ioutilities
