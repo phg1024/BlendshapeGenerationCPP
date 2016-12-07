@@ -3,19 +3,6 @@
 #include <MultilinearReconstruction/basicmesh.h>
 #include "pointcloud.h"
 
-#ifndef MKL_BLAS
-#define MKL_BLAS MKL_DOMAIN_BLAS
-#endif
-
-#define EIGEN_USE_MKL_ALL
-
-#include <eigen3/Eigen/Dense>
-#include <eigen3/Eigen/Geometry>
-#include <eigen3/Eigen/LU>
-#include <Eigen/Sparse>
-#include <Eigen/CholmodSupport>
-using namespace Eigen;
-
 struct ICPCorrespondence {
   int tidx;             // triangle index
   double bcoords[3];     // bary-centric coordinates

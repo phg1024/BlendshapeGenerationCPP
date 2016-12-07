@@ -92,9 +92,9 @@ protected:
   }
 
 private:
-  unique_ptr<MultilinearModel> model;
-  unique_ptr<MultilinearModelPrior> model_prior;
-  unique_ptr<BasicMesh> template_mesh;
+  MultilinearModel model;
+  MultilinearModelPrior model_prior;
+  BasicMesh template_mesh;
 
   int num_shapes;
   vector<BasicMesh> A;      // template blendshapes

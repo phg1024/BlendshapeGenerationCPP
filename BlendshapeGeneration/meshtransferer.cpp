@@ -158,25 +158,25 @@ BasicMesh MeshTransferer::transfer(const vector<PhGUtils::Matrix3x3d> &S1grad)
   auto G = A;
   auto Gt = G.transpose();
 
-  auto GtD = Gt * D;
+  SparseMatrixd GtD = Gt * D;
 
   // compute GtDG
-  auto GtDG = (GtD * G).pruned();
+  SparseMatrixd GtDG = (GtD * G).pruned();
 
   // compute GtD * c
-  auto GtDc = GtD * c;
+  MatrixXd GtDc = GtD * c;
 
   // solve for GtDG \ GtDc
-  CholmodSupernodalLLT<Eigen::SparseMatrix<double>> solver;
+  Eigen::CholmodSupernodalLLT<Eigen::SparseMatrix<double>> solver;
   solver.compute(GtDG);
-  if(solver.info()!=Success) {
+  if(solver.info()!=Eigen::Success) {
     cerr << "Failed to decompose matrix A." << endl;
     exit(-1);
   }
 
   MatrixXd x = solver.solve(GtDc);
 
-  if(solver.info()!=Success) {
+  if(solver.info()!=Eigen::Success) {
     cerr << "Failed to solve A\\b." << endl;
     exit(-1);
   }

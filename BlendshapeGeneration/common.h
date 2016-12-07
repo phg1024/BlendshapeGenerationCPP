@@ -35,3 +35,5 @@ using boost::shared_ptr;
 using namespace std;
 
 #include "Utils/Timer.h"
+
+#include "MultilinearReconstruction/eigen_headers.h"

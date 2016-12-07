@@ -23,14 +23,8 @@
 
 #include "boost/filesystem/operations.hpp"
 #include "boost/filesystem/path.hpp"
-#include <boost/timer/timer.hpp>
-
-#include <eigen3/Eigen/Dense>
-#include <eigen3/Eigen/Geometry>
-#include <eigen3/Eigen/LU>
-#include <Eigen/Sparse>
-#include <Eigen/CholmodSupport>
-using namespace Eigen;
+#include "boost/program_options.hpp"
+#include "boost/timer/timer.hpp"
 
 namespace fs = boost::filesystem;
 
@@ -127,7 +121,7 @@ Array1D<double> estimateWeights(const BasicMesh &S,
   options.num_linear_solver_threads = 8;
 
   Solver::Summary summary;
-  Solve(options, &problem, &summary);
+  ceres::Solve(options, &problem, &summary);
 
   cout << summary.BriefReport() << endl;
 
@@ -736,22 +730,17 @@ void blendShapeGeneration() {
 void blendShapeGeneration_pointcloud(const string& source_path) {
   BlendshapeRefiner refiner;
   refiner.SetBlendshapeCount(46);
-  refiner.LoadTemplateMeshes("/home/phg/Storage/Data/FaceWarehouse_Data_0/Tester_1/Blendshape/", "shape_");
+  refiner.LoadTemplateMeshes("/home/phg/Data/FaceWarehouse_Data_0/Tester_1/Blendshape/", "shape_");
 
   refiner.SetResourcesPath(source_path);
   refiner.SetReconstructionsPath(source_path);
   refiner.SetPointCloudsPath(source_path + "/SFS");
-  refiner.SetInputBlendshapesPath("/home/phg/Storage/Data/FaceWarehouse_Data_0/Tester_1/Blendshape/");
+  refiner.SetInputBlendshapesPath("/home/phg/Data/FaceWarehouse_Data_0/Tester_1/Blendshape/");
   refiner.SetBlendshapesPath(source_path + "/blendshapes");
 
   refiner.LoadSelectionFile("selection.txt");
   refiner.LoadInputReconstructionResults("settings.txt");
   refiner.LoadInputPointClouds();
-
-  // // Turing
-  // refiner.SetResourcesPath("/home/phg/Storage/Data/InternetRecon2/Allen_Turing/");
-  // refiner.LoadInputReconstructionResults("setting.txt");
-  // refiner.LoadInputPointClouds();
 
   refiner.Refine();
 }
@@ -765,7 +754,7 @@ void blendShapeGeneration_pointcloud_blendshapes(
 ) {
   BlendshapeRefiner refiner(true);
   refiner.SetBlendshapeCount(46);
-  refiner.LoadTemplateMeshes("/home/phg/Storage/Data/FaceWarehouse_Data_0/Tester_1/Blendshape/", "shape_");
+  refiner.LoadTemplateMeshes("/home/phg/Data/FaceWarehouse_Data_0/Tester_1/Blendshape/", "shape_");
 
   refiner.SetResourcesPath(source_path);
   refiner.SetReconstructionsPath(recon_path);
@@ -776,11 +765,6 @@ void blendShapeGeneration_pointcloud_blendshapes(
   refiner.LoadSelectionFile("selection.txt");
   refiner.LoadInputReconstructionResults("settings.txt");
   refiner.LoadInputPointClouds();
-
-  // // Turing
-  // refiner.SetResourcesPath("/home/phg/Storage/Data/InternetRecon2/Allen_Turing/");
-  // refiner.LoadInputReconstructionResults("setting.txt");
-  // refiner.LoadInputPointClouds();
 
   refiner.Refine();
 }
@@ -814,6 +798,108 @@ int main(int argc, char *argv[])
 {
   google::InitGoogleLogging(argv[0]);
 
+  namespace po = boost::program_options;
+  po::options_description desc("Options");
+  desc.add_options()
+    ("help", "Print help messages")
+    ("oldfasion", "Generate blendshapes the old way.")
+    ("pointclouds", "Generate blendshapes from point clouds")
+    ("pointclouds_with_init_shapes", "Generate blendshapes from point clouds and a set of initial blendshapes")
+    ("ebfr", "Generate blendshapes using example based facial rigging method")
+    ("repo_path", po::value<string>(), "Path to images repo.")
+    ("recon_path", po::value<string>(), "Path to large scale reconstruction results")
+    ("pointclouds_path", po::value<string>(), "Path to input point clouds")
+    ("init_blendshapes_path", po::value<string>(), "Path to initial blendshapes")
+    ("blendshapes_path", po::value<string>(), "Path to output blendshapes")
+    ("ref_mesh", po::value<string>(), "Reference mesh for distance computation")
+    ("mesh", po::value<string>(), "Mesh to visualize")
+    ("vis", "Visualize blendshape mesh")
+    ("silent", "Silent visualization using offscreen drawing")
+    ("save,s", po::value<string>(), "Save the result to a file");
+  po::variables_map vm;
+
+  try {
+    po::store(po::parse_command_line(argc, argv, desc), vm);
+    po::notify(vm);
+    if(vm.count("help")) {
+      cout << desc << endl;
+      return 1;
+    }
+
+    if(vm.count("oldfasion")) {
+      throw runtime_error("This is no longer supported.");
+      blendShapeGeneration();
+    } else if(vm.count("ebfr")) {
+      throw runtime_error("This is no longer supported.");
+      blendShapeGeneration_pointcloud_EBFR();
+    } else if (vm.count("pointclouds")) {
+      if(vm.count("repo_path")) {
+        blendShapeGeneration_pointcloud(vm["repo_path"].as<string>());
+      } else {
+        throw po::error("Need to specify repo_path");
+      }
+    } else if (vm.count("pointclouds_with_init_shapes")) {
+      if(vm.count("repo_path")
+      && vm.count("recon_path")
+      && vm.count("pointclouds_path")
+      && vm.count("init_blendshapes_path")
+      && vm.count("blendshapes_path")) {
+        blendShapeGeneration_pointcloud_blendshapes(
+          vm["repo_path"].as<string>(),
+          vm["recon_path"].as<string>(),
+          vm["pointclouds_path"].as<string>(),
+          vm["init_blendshapes_path"].as<string>(),
+          vm["blendshapes_path"].as<string>()
+        );
+      } else {
+        throw po::error("Need to specify repo_path, recon_path, pointclouds_path, init_blendshapes_path, blendshapes_path");
+      }
+    } else if(vm.count("vis")) {
+      bool save_result = vm.count("save");
+      bool compare_mode = vm.count("ref_mesh");
+
+      string input_mesh_file;
+      if(vm.count("mesh")) {
+        input_mesh_file = vm["mesh"].as<string>();
+      } else {
+        throw po::error("Need to specify mesh");
+      }
+
+      QApplication a(argc, argv);
+      BlendshapeGeneration w(vm.count("silent"));
+      if(!vm.count("silent")) w.show();
+
+      if(compare_mode) {
+        string ref_mesh_file = vm["ref_mesh"].as<string>();
+
+        w.LoadMeshes(input_mesh_file, ref_mesh_file);
+        w.setWindowTitle(input_mesh_file.c_str());
+      } else {
+        w.LoadMesh(input_mesh_file);
+        w.setWindowTitle(input_mesh_file.c_str());
+      }
+
+      if(save_result) {
+        w.repaint();
+        for(int i=0;i<10;++i)
+          qApp->processEvents();
+
+        w.Save(vm["save"].as<string>());
+        qApp->processEvents();
+        return 0;
+      } else {
+        return a.exec();
+      }
+    }
+
+  } catch(po::error& e) {
+    cerr << "Error: " << e.what() << endl;
+    cerr << desc << endl;
+    return 1;
+  }
+
+  return 0;
+
 #if RUN_TESTS
   TestCases::testCeres();
   return 0;
@@ -841,7 +927,7 @@ int main(int argc, char *argv[])
   else if( option == "-v" ) {
     // visualize blendshape
     QApplication a(argc, argv);
-    BlendshapeGeneration w;
+    BlendshapeGeneration w(false);
     w.show();
     if(argc>3) {
       w.LoadMeshes(argv[2], argv[3]);
@@ -854,7 +940,7 @@ int main(int argc, char *argv[])
   } else if (option == "-vs") {
     // visualize and save the result
     QApplication a(argc, argv);
-    BlendshapeGeneration w;
+    BlendshapeGeneration w(false);
     w.show();
     if(argc>4) {
       w.LoadMeshes(argv[2], argv[3]);

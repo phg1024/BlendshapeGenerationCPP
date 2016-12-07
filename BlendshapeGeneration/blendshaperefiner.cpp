@@ -5,13 +5,6 @@
 
 #include "MultilinearReconstruction/costfunctions.h"
 
-#include <eigen3/Eigen/Dense>
-#include <eigen3/Eigen/Geometry>
-#include <eigen3/Eigen/LU>
-#include <Eigen/Sparse>
-#include <Eigen/CholmodSupport>
-using namespace Eigen;
-
 namespace utils {
   void pause() {
     std::cout << "Press enter to continue...";
@@ -21,11 +14,13 @@ namespace utils {
 
 BlendshapeRefiner::BlendshapeRefiner(bool use_init_blendshapes)
  : use_init_blendshapes(use_init_blendshapes) {
-  model.reset(new MultilinearModel("/home/phg/Data/Multilinear/blendshape_core.tensor"));
-  model_prior.reset(new MultilinearModelPrior());
-  model_prior->load("/home/phg/Data/Multilinear/blendshape_u_0_aug.tensor",
-                    "/home/phg/Data/Multilinear/blendshape_u_1_aug.tensor");
-  template_mesh.reset(new BasicMesh("/home/phg/Data/Multilinear/template.obj"));
+  model = MultilinearModel("/home/phg/Data/Multilinear/blendshape_core.tensor");
+
+  model_prior.load("/home/phg/Data/Multilinear/blendshape_u_0_aug.tensor",
+                   "/home/phg/Data/Multilinear/blendshape_u_1_aug.tensor");
+
+  template_mesh = BasicMesh("/home/phg/Data/Multilinear/template.obj");
+  cout << "Blendshape refiner created." << endl;
 }
 
 void BlendshapeRefiner::SetResourcesPath(const string& path) {
@@ -209,15 +204,15 @@ void BlendshapeRefiner::CreateTrainingShapes() {
   S0.resize(num_poses);
   for(int i=0;i<num_poses;++i) {
     ColorStream(ColorOutput::Green)<< "creating initial training shape " << i;
-    S0[i] = *template_mesh;
+    S0[i] = template_mesh;
 
     if(use_init_blendshapes) {
       // Synthesize from initial blendshapes
       ApplyWeights(S0[i], Binit, image_bundles[i].params.params_model.Wexp_FACS);
     } else {
       // Synthesize from multilinear model
-      model->ApplyWeights(image_bundles[i].params.params_model.Wid, image_bundles[i].params.params_model.Wexp);
-      S0[i].UpdateVertices(model->GetTM());
+      model.ApplyWeights(image_bundles[i].params.params_model.Wid, image_bundles[i].params.params_model.Wexp);
+      S0[i].UpdateVertices(model.GetTM());
     }
 
     S0[i].ComputeNormals();
@@ -226,7 +221,7 @@ void BlendshapeRefiner::CreateTrainingShapes() {
   ColorStream(ColorOutput::Blue)<< "initial training shapes created.";
 
 
-  auto& m = (*template_mesh);
+  auto& m = (template_mesh);
   vector<int> valid_faces = m.filterFaces([&m](Vector3i fi) {
     Vector3d c = (m.vertex(fi[0]) + m.vertex(fi[1]) + m.vertex(fi[2]))/ 3.0;
     return c[2] > -0.5;
@@ -252,11 +247,11 @@ void BlendshapeRefiner::InitializeBlendshapes() {
     // Nothing to do
   } else {
     // Create the initial neutral face mesh
-    model->ApplyWeights(image_bundles[0].params.params_model.Wid, model_prior->Wexp0);
+    model.ApplyWeights(image_bundles[0].params.params_model.Wid, model_prior.Wexp0);
 
     Binit.resize(A.size());
-    Binit[0] = *template_mesh;
-    Binit[0].UpdateVertices(model->GetTM());
+    Binit[0] = template_mesh;
+    Binit[0].UpdateVertices(model.GetTM());
     Binit[0].ComputeNormals();
 
     Binit[0].Write( InBlendshapesDirectory("Binit_0.obj") );
@@ -391,7 +386,7 @@ VectorXd BlendshapeRefiner::EstimateWeights(const BasicMesh &S, const BasicMesh 
   options.minimizer_progress_to_stdout = true;
 
   Solver::Summary summary;
-  Solve(options, &problem, &summary);
+  ceres::Solve(options, &problem, &summary);
 
   cout << summary.BriefReport() << endl;
 

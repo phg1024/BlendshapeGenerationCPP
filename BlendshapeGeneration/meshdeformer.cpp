@@ -19,6 +19,9 @@ typedef CGAL::AABB_triangle_primitive<K, Iterator> Primitive;
 typedef CGAL::AABB_traits<K, Primitive> AABB_triangle_traits;
 typedef CGAL::AABB_tree<AABB_triangle_traits> Tree;
 
+using Eigen::CholmodSupernodalLLT;
+using Eigen::Success;
+
 MeshDeformer::MeshDeformer() {}
 
 MeshDeformer::~MeshDeformer() {}
@@ -496,7 +499,7 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
 
     // compute M' * b
     //cout << "computing M'*b..." << endl;
-    auto Mtb = Mt * b;
+    VectorXd Mtb = Mt * b;
     tmatrix.toc("constructing linear equations");
 
     PhGUtils::Timer tsolve;
@@ -521,7 +524,7 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
         solver.compute(MtM);
       #endif
 
-      if(solver.info()!=Success) {
+      if(solver.info()!=Eigen::Success) {
         cerr << "Failed to decompose matrix A." << endl;
         exit(-1);
       }
