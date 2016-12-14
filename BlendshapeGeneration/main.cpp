@@ -28,6 +28,9 @@
 
 namespace fs = boost::filesystem;
 
+#include "json/src/json.hpp"
+using json = nlohmann::json;
+
 #if 0
 struct ImageBundle {
   ImageBundle() {}
@@ -727,8 +730,14 @@ void blendShapeGeneration() {
   }
 }
 
-void blendShapeGeneration_pointcloud(const string& source_path) {
-  BlendshapeRefiner refiner;
+void blendShapeGeneration_pointcloud(
+  const string& source_path,
+  bool subdivision) {
+  BlendshapeRefiner refiner(
+    json{
+        {"use_init_blendshapes", false},
+        {"subdivision", subdivision}
+      });
   refiner.SetBlendshapeCount(46);
   refiner.LoadTemplateMeshes("/home/phg/Data/FaceWarehouse_Data_0/Tester_1/Blendshape/", "shape_");
 
@@ -750,9 +759,15 @@ void blendShapeGeneration_pointcloud_blendshapes(
   const string& recon_path,
   const string& point_clouds_path,
   const string& input_blendshapes_path,
-  const string& blendshapes_path
+  const string& blendshapes_path,
+  bool subdivision
 ) {
-  BlendshapeRefiner refiner(true);
+  BlendshapeRefiner refiner(
+    json{
+      {"use_init_blendshapes", true},
+      {"subdivision", subdivision}
+    }
+  );
   refiner.SetBlendshapeCount(46);
   refiner.LoadTemplateMeshes("/home/phg/Data/FaceWarehouse_Data_0/Tester_1/Blendshape/", "shape_");
 
@@ -787,13 +802,6 @@ void blendShapeGeneration_pointcloud_EBFR() {
   refiner.Refine_EBFR();
 }
 
-void printUsage() {
-  cout << "Blendshape generation: [program] -b" << endl;
-  cout << "Blendshape generation with point clouds: [program] -bp source_path" << endl;
-  cout << "Blendshape generation with point clouds and initial blendshapes: [program] -bs source_path recon_path point_cloud_path init_blendshapes_path blendshapes_path" << endl;
-  cout << "Blendshape visualization: [program] -v" << endl;
-}
-
 int main(int argc, char *argv[])
 {
   google::InitGoogleLogging(argv[0]);
@@ -811,6 +819,7 @@ int main(int argc, char *argv[])
     ("pointclouds_path", po::value<string>(), "Path to input point clouds")
     ("init_blendshapes_path", po::value<string>(), "Path to initial blendshapes")
     ("blendshapes_path", po::value<string>(), "Path to output blendshapes")
+    ("subdivision", "Enable subdivision")
     ("ref_mesh", po::value<string>(), "Reference mesh for distance computation")
     ("mesh", po::value<string>(), "Mesh to visualize")
     ("vis", "Visualize blendshape mesh")
@@ -834,7 +843,8 @@ int main(int argc, char *argv[])
       blendShapeGeneration_pointcloud_EBFR();
     } else if (vm.count("pointclouds")) {
       if(vm.count("repo_path")) {
-        blendShapeGeneration_pointcloud(vm["repo_path"].as<string>());
+        blendShapeGeneration_pointcloud(vm["repo_path"].as<string>(),
+                                        vm.count("subdivision"));
       } else {
         throw po::error("Need to specify repo_path");
       }
@@ -849,7 +859,8 @@ int main(int argc, char *argv[])
           vm["recon_path"].as<string>(),
           vm["pointclouds_path"].as<string>(),
           vm["init_blendshapes_path"].as<string>(),
-          vm["blendshapes_path"].as<string>()
+          vm["blendshapes_path"].as<string>(),
+          vm.count("subdivision")
         );
       } else {
         throw po::error("Need to specify repo_path, recon_path, pointclouds_path, init_blendshapes_path, blendshapes_path");
@@ -899,65 +910,4 @@ int main(int argc, char *argv[])
   }
 
   return 0;
-
-#if RUN_TESTS
-  TestCases::testCeres();
-  return 0;
-#else
-
-  if( argc < 2 ) {
-    printUsage();
-  }
-
-  string option = argv[1];
-
-  if( option == "-b" ) {
-    blendShapeGeneration();
-  }
-  else if( option == "-bp" ) {
-    blendShapeGeneration_pointcloud(argv[2]);
-  }
-  else if( option == "-bs") {
-    blendShapeGeneration_pointcloud_blendshapes(
-      argv[2], argv[3], argv[4], argv[5], argv[6]);
-  }
-  else if( option == "-ebfr") {
-    blendShapeGeneration_pointcloud_EBFR();
-  }
-  else if( option == "-v" ) {
-    // visualize blendshape
-    QApplication a(argc, argv);
-    BlendshapeGeneration w(false);
-    w.show();
-    if(argc>3) {
-      w.LoadMeshes(argv[2], argv[3]);
-      w.setWindowTitle(argv[2]);
-    } else if(argc>2) {
-      w.LoadMesh(argv[2]);
-      w.setWindowTitle(argv[2]);
-    }
-    return a.exec();
-  } else if (option == "-vs") {
-    // visualize and save the result
-    QApplication a(argc, argv);
-    BlendshapeGeneration w(false);
-    w.show();
-    if(argc>4) {
-      w.LoadMeshes(argv[2], argv[3]);
-      w.setWindowTitle(argv[2]);
-    } else if(argc>3) {
-      w.LoadMesh(argv[2]);
-      w.setWindowTitle(argv[2]);
-    }
-    w.repaint();
-    for(int i=0;i<10;++i)
-      qApp->processEvents();
-
-    w.Save(string(argv[argc-1]));
-    qApp->processEvents();
-    return 0;
-  }
-
-  return 0;
-#endif
 }

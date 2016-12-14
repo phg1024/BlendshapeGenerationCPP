@@ -17,6 +17,9 @@
 
 namespace fs = boost::filesystem;
 
+#include "json/src/json.hpp"
+using json = nlohmann::json;
+
 struct ImageBundle {
   ImageBundle() {}
   ImageBundle(const QImage& image, const vector<Constraint2D>& points, const ReconstructionResult& params)
@@ -28,7 +31,7 @@ struct ImageBundle {
 
 class BlendshapeRefiner {
 public:
-  BlendshapeRefiner(bool use_init_blendshapes=false);
+  BlendshapeRefiner(json settings = json{});
   ~BlendshapeRefiner() {}
 
   void SetBlendshapeCount(int count) { num_shapes = count; }
@@ -104,6 +107,7 @@ private:
 
   int num_poses;
   bool use_init_blendshapes;
+  bool do_subdivision;
   vector<ImageBundle> image_bundles;
   vector<MatrixXd> point_clouds;
   vector<BasicMesh> S0;     // initial training shapes

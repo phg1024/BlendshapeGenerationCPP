@@ -181,7 +181,7 @@ void OffscreenBlendshapeVisualizer::paint()
     double maxVal = (*std::max_element(dists.begin(), dists.end()));
     #else
     double minVal = 0.0;
-    double maxVal = 0.150;
+    double maxVal = 0.0750;
     #endif
     string minStr = "min: " + to_string(minVal);
     string maxStr = "max: " + to_string(maxVal);
@@ -342,7 +342,7 @@ void OffscreenBlendshapeVisualizer::drawMeshWithColor(const BasicMesh &m)
   double maxVal = *(std::max_element(dists.begin(), dists.end()));
   double minVal = *(std::min_element(dists.begin(), dists.end()));
   #else
-  double maxVal = 0.150;
+  double maxVal = 0.075;
   double minVal = 0.0;
   #endif
 
@@ -462,7 +462,7 @@ void BlendshapeVisualizer::paintGL()
     double maxVal = (*std::max_element(dists.begin(), dists.end()));
     #else
     double minVal = 0.0;
-    double maxVal = 0.150;
+    double maxVal = 0.075;
     #endif
     string minStr = "min: " + to_string(minVal);
     string maxStr = "max: " + to_string(maxVal);
@@ -634,7 +634,7 @@ void BlendshapeVisualizer::drawMeshWithColor(const BasicMesh &m)
   double maxVal = *(std::max_element(dists.begin(), dists.end()));
   double minVal = *(std::min_element(dists.begin(), dists.end()));
   #else
-  double maxVal = 0.150;
+  double maxVal = 0.075;
   double minVal = 0.0;
   #endif
 

@@ -12,8 +12,15 @@ namespace utils {
   }
 }
 
-BlendshapeRefiner::BlendshapeRefiner(bool use_init_blendshapes)
- : use_init_blendshapes(use_init_blendshapes) {
+BlendshapeRefiner::BlendshapeRefiner(json settings) {
+  if(!settings.empty()) {
+    use_init_blendshapes = settings["use_init_blendshapes"];
+    do_subdivision = settings["subdivision"];
+  } else {
+    use_init_blendshapes = false;
+    do_subdivision = false;
+  }
+
   model = MultilinearModel("/home/phg/Data/Multilinear/blendshape_core.tensor");
 
   model_prior.load("/home/phg/Data/Multilinear/blendshape_u_0_aug.tensor",
@@ -850,7 +857,6 @@ void BlendshapeRefiner::Refine() {
     if(iters == maxIters) break;
 
     // Optional: subdivide all meshes
-    const bool do_subdivision = false;
     if(do_subdivision){
       ColorStream(ColorOutput::Blue) << "Subdividing the meshes...";
       // Subdivide every mesh
@@ -1263,7 +1269,6 @@ void BlendshapeRefiner::Refine_EBFR() {
     if(iters == maxIters) break;
 
     // Optional: subdivide all meshes
-    const bool do_subdivision = true;
     if(do_subdivision){
       ColorStream(ColorOutput::Blue) << "Subdividing the meshes...";
       // Subdivide every mesh

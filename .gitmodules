@@ -1,3 +1,6 @@
 [submodule "BlendshapeGeneration/MultilinearReconstruction"]
 	path = BlendshapeGeneration/MultilinearReconstruction
 	url = ../MultilinearReconstruction.git
+[submodule "BlendshapeGeneration/json"]
+	path = BlendshapeGeneration/json
+	url = https://github.com/nlohmann/json
