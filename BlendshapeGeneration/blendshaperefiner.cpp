@@ -697,6 +697,26 @@ void BlendshapeRefiner::Refine() {
   // [Step 2]: create a set of initial blendshapes using initial neutral face mesh and template blendshapes
   InitializeBlendshapes();
 
+  // HACK subdivide A and S if use_init_blendshapes
+  if(use_init_blendshapes) {
+    ColorStream(ColorOutput::Blue) << "Using init blendshapes. Sudivide template meshes and training shapes ...";
+    ColorStream(ColorOutput::Blue) << "Subdividing the meshes...";
+    // Subdivide every mesh
+    // Subdivide A and update prior, w_prior, stationary_indices
+    ColorStream(ColorOutput::Blue) << "Subdividing the template meshes...";
+    for(auto &Ai : A) {
+      Ai.BuildHalfEdgeMesh();
+      Ai.Subdivide();
+    }
+
+    // Subdivide S, no need to update Sgrad because S will be deformed later
+    ColorStream(ColorOutput::Blue) << "Subdividing the training meshes...";
+    for(auto &Si : S) {
+      Si.BuildHalfEdgeMesh();
+      Si.Subdivide();
+    }
+  }
+
   // [Step 3]: blendshape refinement
 
   // [blendshape refinement] data preparation
@@ -790,7 +810,7 @@ void BlendshapeRefiner::Refine() {
   double gamma_max = 0.01, gamma_min = 0.01;
   double eta_max = 1.0, eta_min = 0.1;
   int iters = 0;
-  const int maxIters = 2;   // This will do 2 subdivisions
+  const int maxIters = 2;   // This will do (maxIters - 1) subdivisions
   MatrixXd B_error = MatrixXd::Zero(maxIters, num_shapes + 1);
   MatrixXd S_error = MatrixXd::Zero(maxIters, num_poses);
   while( !converged && iters < maxIters ){
