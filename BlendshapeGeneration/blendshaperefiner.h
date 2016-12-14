@@ -108,6 +108,7 @@ private:
   int num_poses;
   bool use_init_blendshapes;
   bool do_subdivision;
+  bool blendshapes_subdivided;
   vector<ImageBundle> image_bundles;
   vector<MatrixXd> point_clouds;
   vector<BasicMesh> S0;     // initial training shapes

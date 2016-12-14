@@ -16,9 +16,11 @@ BlendshapeRefiner::BlendshapeRefiner(json settings) {
   if(!settings.empty()) {
     use_init_blendshapes = settings["use_init_blendshapes"];
     do_subdivision = settings["subdivision"];
+    blendshapes_subdivided = settings["blendshapes_subdivided"];
   } else {
     use_init_blendshapes = false;
     do_subdivision = false;
+    blendshapes_subdivided = false;
   }
 
   model = MultilinearModel("/home/phg/Data/Multilinear/blendshape_core.tensor");
@@ -342,6 +344,7 @@ VectorXd BlendshapeRefiner::EstimateWeights(const BasicMesh &S, const BasicMesh 
   Problem problem;
 
   // add all constraints
+  // TODO add only the vertices in the front side
   const int num_verts = S.NumVertices();
   for(int i=0;i<num_verts;++i) {
     auto vS = S.vertex(i);
@@ -691,6 +694,12 @@ void BlendshapeRefiner::Refine() {
   // [Step 0]: load initial blendshapes if possible
   if(use_init_blendshapes) LoadInitialBlendshapes();
 
+  // HACK subdivide template mesh if use_init_blendshapes
+  if(blendshapes_subdivided) {
+    template_mesh.BuildHalfEdgeMesh();
+    template_mesh.Subdivide();
+  }
+
   // [Step 1]: deform the inintial training shapes with the input point clouds
   CreateTrainingShapes();
 
@@ -698,7 +707,7 @@ void BlendshapeRefiner::Refine() {
   InitializeBlendshapes();
 
   // HACK subdivide A and S if use_init_blendshapes
-  if(use_init_blendshapes) {
+  if(blendshapes_subdivided) {
     ColorStream(ColorOutput::Blue) << "Using init blendshapes. Sudivide template meshes and training shapes ...";
     ColorStream(ColorOutput::Blue) << "Subdividing the meshes...";
     // Subdivide every mesh
@@ -709,12 +718,15 @@ void BlendshapeRefiner::Refine() {
       Ai.Subdivide();
     }
 
+    // No need to subdivide S since it's generated from subdivided template mesh
+    #if 0
     // Subdivide S, no need to update Sgrad because S will be deformed later
     ColorStream(ColorOutput::Blue) << "Subdividing the training meshes...";
     for(auto &Si : S) {
       Si.BuildHalfEdgeMesh();
       Si.Subdivide();
     }
+    #endif
   }
 
   // [Step 3]: blendshape refinement

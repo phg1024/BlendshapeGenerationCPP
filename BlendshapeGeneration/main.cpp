@@ -736,7 +736,8 @@ void blendShapeGeneration_pointcloud(
   BlendshapeRefiner refiner(
     json{
         {"use_init_blendshapes", false},
-        {"subdivision", subdivision}
+        {"subdivision", subdivision},
+        {"blendshapes_subdivided", false}
       });
   refiner.SetBlendshapeCount(46);
   refiner.LoadTemplateMeshes("/home/phg/Data/FaceWarehouse_Data_0/Tester_1/Blendshape/", "shape_");
@@ -760,12 +761,14 @@ void blendShapeGeneration_pointcloud_blendshapes(
   const string& point_clouds_path,
   const string& input_blendshapes_path,
   const string& blendshapes_path,
-  bool subdivision
+  bool subdivision,
+  bool blendshapes_subdivided
 ) {
   BlendshapeRefiner refiner(
     json{
       {"use_init_blendshapes", true},
-      {"subdivision", subdivision}
+      {"subdivision", subdivision},
+      {"blendshapes_subdivided", blendshapes_subdivided}
     }
   );
   refiner.SetBlendshapeCount(46);
@@ -819,6 +822,7 @@ int main(int argc, char *argv[])
     ("pointclouds_path", po::value<string>(), "Path to input point clouds")
     ("init_blendshapes_path", po::value<string>(), "Path to initial blendshapes")
     ("blendshapes_path", po::value<string>(), "Path to output blendshapes")
+    ("subdivided", "Indicate the input blendshapes are subdivided")
     ("subdivision", "Enable subdivision")
     ("ref_mesh", po::value<string>(), "Reference mesh for distance computation")
     ("mesh", po::value<string>(), "Mesh to visualize")
@@ -860,7 +864,8 @@ int main(int argc, char *argv[])
           vm["pointclouds_path"].as<string>(),
           vm["init_blendshapes_path"].as<string>(),
           vm["blendshapes_path"].as<string>(),
-          vm.count("subdivision")
+          vm.count("subdivision"),
+          vm.count("subdivided")
         );
       } else {
         throw po::error("Need to specify repo_path, recon_path, pointclouds_path, init_blendshapes_path, blendshapes_path");
