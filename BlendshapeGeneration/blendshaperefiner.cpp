@@ -328,31 +328,84 @@ void BlendshapeRefiner::InitializeBlendshapes() {
   reporter.Toc();
 }
 
+#define WEIGHT_ESTIMATION_USE_AUTODIFF_COST_FUNCTIONS 0
+
+#if WEIGHT_ESTIMATION_USE_AUTODIFF_COST_FUNCTIONS
 struct PointResidual {
-  PointResidual(double x, double y, double z, int idx, const vector<MatrixX3d> &dB)
-    : mx(x), my(y), mz(z), vidx(idx), dB(dB) {}
+  PointResidual(const Vector3d& v, int idx, const vector<MatrixX3d> &dB)
+    : v(v), vidx(idx), dB(dB) {}
 
   template <typename T>
   bool operator()(const T* const alpha, T* residual) const {
-    T p[3];
-    p[0] = T(0); p[1] = T(0); p[2] = T(0);
     int nshapes = dB.size();
+    T p[3] = {T(0), T(0), T(0)};
     // compute
     for(int i=0;i<nshapes;++i) {
-      auto dBi_ptr = dB[i].row(vidx);
-      p[0] += T(dBi_ptr[0]) * alpha[i];
-      p[1] += T(dBi_ptr[1]) * alpha[i];
-      p[2] += T(dBi_ptr[2]) * alpha[i];
+      Vector3d vi = dB[i].row(vidx);
+      p[0] += T(vi[0]) * alpha[i];
+      p[1] += T(vi[1]) * alpha[i];
+      p[2] += T(vi[2]) * alpha[i];
     }
-    residual[0] = T(mx) - p[0]; residual[1] = T(my) - p[1]; residual[2] = T(mz) - p[2];
+    residual[0] = T(v[0]) - p[0];
+    residual[1] = T(v[1]) - p[1];
+    residual[2] = T(v[2]) - p[2];
     return true;
   }
 
 private:
-  const double mx, my, mz;
+  const Vector3d v;
   const int vidx;
   const vector<MatrixX3d> &dB;
 };
+#else
+struct PointResidual : public ceres::SizedCostFunction<3, 46> {
+  PointResidual(const Vector3d& v, int idx, const vector<MatrixX3d> &dB)
+    : v(v), vidx(idx), dB(dB) {}
+
+  virtual bool Evaluate(double const * const *params,
+                        double* residual,
+                        double** jacobians) const {
+    const double* alpha = params[0];
+    const int nshapes = dB.size();
+    Vector3d p(0, 0, 0);
+    // compute
+    for(int i=0;i<nshapes;++i) {
+      p += dB[i].row(vidx) * alpha[i];
+    }
+    Vector3d r = v - p;
+
+    residual[0] = r[0];
+    residual[1] = r[1];
+    residual[2] = r[2];
+
+    if( jacobians != NULL ) {
+      if(jacobians[0] != NULL) {
+        // r = v - \alpha * [v_0, v_1, ..., v_{n-1}]
+        //   = v - \sum_{i=0}^{n-1} \alpha_i v_i
+
+        // \frac{\partial r}{\partial \alpha_i} = -v_i
+
+        for(int i=0;i<nshapes;++i) {
+          // jacobians[0][i] = \frac{\partial r_0}{\partial \alpha_i}
+          jacobians[0][i] = -dB[i].row(vidx)[0];
+
+          // jacobians[0][i + nshapes] = \frac{\partial r_1}{\partial \alpha_i}
+          jacobians[0][nshapes+i] = -dB[i].row(vidx)[1];
+
+          // jacobians[0][i + nshapes*2] = \frac{\partial r_2}{\partial \alpha_i}
+          jacobians[0][nshapes*2+i] = -dB[i].row(vidx)[2];
+        }
+      }
+    }
+    return true;
+  }
+
+private:
+  const Vector3d v;
+  const int vidx;
+  const vector<MatrixX3d> &dB;
+};
+#endif
 
 struct PriorResidue {
   PriorResidue(const double *prior):mprior(prior){}
@@ -384,31 +437,31 @@ VectorXd BlendshapeRefiner::EstimateWeights(
 
   Problem problem;
 
+  MatrixX3d dV = S.vertices() - B0.vertices();
+
   // add all constraints
   if (valid_vertices.empty()) {
     const int num_verts = S.NumVertices();
     for(int i=0;i<num_verts;++i) {
-      auto vS = S.vertex(i);
-      auto vB0 = B0.vertex(i);
-      double dx = vS[0] - vB0[0];
-      double dy = vS[1] - vB0[1];
-      double dz = vS[2] - vB0[2];
-
+#if WEIGHT_ESTIMATION_USE_AUTODIFF_COST_FUNCTIONS
       CostFunction *costfun = new AutoDiffCostFunction<PointResidual, 3, 46>(
-        new PointResidual(dx, dy, dz, i, dB));
+        new PointResidual(dV.row(i), i, dB)
+      );
+#else
+      CostFunction *costfun = new PointResidual(dV.row(i), i, dB);
+#endif
       problem.AddResidualBlock(costfun, NULL, w.data()+1);
     }
   } else {
     // add only the valid vertices for estimating weights
     for(auto i : valid_vertices) {
-      auto vS = S.vertex(i);
-      auto vB0 = B0.vertex(i);
-      double dx = vS[0] - vB0[0];
-      double dy = vS[1] - vB0[1];
-      double dz = vS[2] - vB0[2];
-
+#if WEIGHT_ESTIMATION_USE_AUTODIFF_COST_FUNCTIONS
       CostFunction *costfun = new AutoDiffCostFunction<PointResidual, 3, 46>(
-        new PointResidual(dx, dy, dz, i, dB));
+        new PointResidual(dV.row(i), i, dB)
+      );
+#else
+      CostFunction *costfun = new PointResidual(dV.row(i), i, dB);
+#endif
       problem.AddResidualBlock(costfun, NULL, w.data()+1);
     }
   }
@@ -510,8 +563,8 @@ vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> 
   using SparseMatrixd = Eigen::SparseMatrix<double, Eigen::RowMajor>;
   vector<Tripletd> Adata_coeffs;
 
+  // Precompute A_data
   const double w_data = 1.0;
-  MatrixXd A_data = MatrixXd::Zero(nrows_data, ncols_data);
   for(int i=0;i<nposes;++i) {
     int row_offset = i * 9;
     for(int k=0;k<9;++k) {
@@ -525,6 +578,12 @@ vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> 
     }
   }
 
+  Eigen::SparseMatrix<double> A_data(nrows_data, ncols_data);
+  A_data.setFromTriplets(Adata_coeffs.begin(), Adata_coeffs.end());
+  A_data.makeCompressed();
+  Eigen::SparseMatrix<double> A_data_T = A_data.transpose();
+  Eigen::SparseMatrix<double> A_dataTA_data = (A_data_T * A_data).pruned();
+
   ColorStream(ColorOutput::Blue) << "computing per-face deformation gradients.";
   vector<MatrixXd> M(nfaces, MatrixXd(nshapes+1, 9));
 
@@ -534,16 +593,14 @@ vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> 
     #pragma omp parallel for
       for(int j=0;j<nfaces;++j) {
         // skip if the face is stationary
-        /*
         if (stationary_faces_set[j]) {
           M[j] = MatrixXd(nshapes + 1, 9);
-          for(int i=0;i<=nshapes;++i) {
-            auto B0ji_ptr = B00grads[i].rowptr(j);
-            for(int k=0;k<9;++k) M[j](i, k) = B0ji_ptr[k];
+          for(int k=0;k<9;++k) M[j](0, k) = B00grads[0].rowptr(j)[k];
+          for(int i=1;i<=nshapes;++i) {
+            for(int k=0;k<9;++k) M[j](i, k) = B00grads[i].rowptr(j)[k] - B00grads[0].rowptr(j)[k];
           }
           continue;
         }
-        */
 
         // b_data
         VectorXd b_data(nrows_data);
@@ -552,6 +609,8 @@ vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> 
           for(int k=0;k<9;++k) b_data(i*9+k) = Sgrad_ij(k);
         }
         b_data *= w_data;
+
+        VectorXd A_dataTb_data = A_data_T * b_data;
 
         // A_reg
         vector<Tripletd> Areg_coeffs;
@@ -640,16 +699,15 @@ vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> 
         const int nrows_total = nrows_data + nrows_reg + nrows_sim;
         const int ncols_total = ncols_data;
 
-
-        //MatrixXd A(nrows_total, ncols_total);
-        //A.topRows(nrows_data) = A_data;
-        //A.middleRows(nrows_data, nrows_reg) = A_reg;
-        //A.bottomRows(nrows_sim) = A_sim;
+        // A = [A_data; A_reg; A_sim]
+        // AtA = A_dataTA_data + A_regTA_reg + A_simTA_sim;
 
         Eigen::SparseMatrix<double> A(nrows_total, ncols_total);
         vector<Tripletd> A_coeffs(0);
         A_coeffs.reserve(Adata_coeffs.size() + Areg_coeffs.size() + Asim_coeffs.size());
-        A_coeffs.insert(A_coeffs.end(), Adata_coeffs.begin(), Adata_coeffs.end());
+
+        // A_dataTA_data is common, so move it outside the loop
+        //A_coeffs.insert(A_coeffs.end(), Adata_coeffs.begin(), Adata_coeffs.end());
         A_coeffs.insert(A_coeffs.end(), Areg_coeffs.begin(), Areg_coeffs.end());
         A_coeffs.insert(A_coeffs.end(), Asim_coeffs.begin(), Asim_coeffs.end());
 
@@ -669,6 +727,9 @@ vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> 
 
         Eigen::SparseMatrix<double> AtA = (A.transpose() * A).pruned();
 
+        // Add back A_dataTA_data, which is computed outside
+        AtA += A_dataTA_data;
+
         const double epsilon = 0.0;//1e-9;
         Eigen::SparseMatrix<double> eye(ncols_total, ncols_total);
         for(int j=0;j<ncols_total;++j) eye.insert(j, j) = epsilon;
@@ -678,28 +739,19 @@ vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> 
         solver.compute(AtA);
 
         VectorXd b(nrows_total);
-        b.topRows(nrows_data) = b_data;
+        // A_dataTb_data is computed earlier
+        //b.topRows(nrows_data) = b_data;
         b.middleRows(nrows_data, nrows_reg) = b_reg;
         b.bottomRows(nrows_sim) = b_sim;
 
-        /*
-        JacobiSVD<MatrixXd> svd(A.transpose() * A);
-        double cond = svd.singularValues()(0)
-                      / svd.singularValues()(svd.singularValues().size()-1);
-        cout << cond << endl;
-
-        VectorXd Mv = (A.transpose() * A).ldlt().solve(A.transpose() * b);
-        */
-
-        //VectorXd Atb = A.transpose() * b;
-        VectorXd Mv = solver.solve(A.transpose() * b);
+        // Add A_dataTb_data to Atb
+        VectorXd Mv = solver.solve(A.transpose() * b + A_dataTb_data);
         if(solver.info()!=Success) {
           cerr << "Failed to solve A\\b." << endl;
           exit(-1);
         }
 
-        // Store it into M
-        //M[j] = MatrixXd(nshapes + 1, 9);
+        // Store it into M, M is allocated outside the loop
         for(int i=0;i<=nshapes;++i) {
           M[j].row(i) = Mv.middleRows(i*9, 9).transpose();
         }
@@ -886,6 +938,10 @@ void BlendshapeRefiner::Refine() {
     return v[2] <= -0.45;
   });
 
+  vector<int> front_face_vertices = B00.filterVertices([=](const Vector3d& v) {
+    return v[2] > -0.45;
+  });
+
   vector<int> stationary_faces = B00.filterFaces([=](const Vector3i& f) {
     Vector3d center = (B00.vertex(f[0]) + B00.vertex(f[1]) + B00.vertex(f[2])) / 3.0;
     return center[2] <= -0.45;
@@ -968,7 +1024,7 @@ void BlendshapeRefiner::Refine() {
     for(int i=0;i<num_poses;++i) {
       alpha_new[i] = EstimateWeights(S[i], B[0], dB,
                                      alpha[i], alpha_init[i], eta, 2,
-                                     stationary_indices);
+                                     front_face_vertices);
       auto alpha_diff = alpha_new[i] - alpha[i];
       alpha_norm(i) = alpha_diff.norm();
     }
