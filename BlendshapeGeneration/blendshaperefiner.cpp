@@ -368,7 +368,7 @@ struct PointResidual : public ceres::SizedCostFunction<3, 46> {
     const double* alpha = params[0];
     const int nshapes = dB.size();
     Vector3d p(0, 0, 0);
-    // compute
+
     for(int i=0;i<nshapes;++i) {
       p += dB[i].row(vidx) * alpha[i];
     }

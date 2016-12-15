@@ -137,15 +137,173 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
     #endif
     //cout << Tm[i] << endl;
   }
-  cout << "check point 1" << endl;
-
-  BasicMesh D = S; // make a copy of the source mesh
 
   int npoints = P.rows();
 
   //ofstream fP("P.txt");
   //fP << P;
   //fP.close();
+
+  using Tripletd = Eigen::Triplet<double>;
+  using SparseMatrixd = Eigen::SparseMatrix<double, Eigen::RowMajor>;
+
+  // pre-compute Laplacian part of M
+#define USE_PRECOMPUTED_LAPLACIAN_TERM 1
+#if USE_PRECOMPUTED_LAPLACIAN_TERM
+  // Establish vertex-index mapping
+  vertex_index_map.clear();
+  vertex_index_map.resize(S.NumVertices(), -1);
+  int vertex_index = 0;
+
+  // Add valid vertices
+  vector<int> inverse_vertex_index_map;
+  for(auto vi : valid_vertices) {
+    vertex_index_map[vi] = vertex_index;
+    inverse_vertex_index_map.push_back(vi);
+    ++vertex_index;
+  }
+
+  // Add boundary vertices
+  for(auto vi : fixed_faces_boundary_vertices) {
+    if( vertex_index_map[vi] == -1 ) {
+      vertex_index_map[vi] = vertex_index;
+      inverse_vertex_index_map.push_back(vi);
+      ++vertex_index;
+    }
+  }
+
+  // Add landmarks vertices
+  // Assume the landmarks are vertices of the valid faces
+  for(auto vi : landmarks) {
+    if( vertex_index_map[vi] == -1 ) {
+      vertex_index_map[vi] = vertex_index;
+      inverse_vertex_index_map.push_back(vi);
+      ++vertex_index;
+    }
+  }
+  const int ncols = vertex_index * 3;
+
+  //cout << "ncols = " << ncols << endl;
+
+  // count the total number of terms
+  int nrows = 0;
+  int nterms = 0;
+
+  // add ICP terms
+  nterms += npoints * 9;
+  nrows += npoints * 3;
+
+  //cout << "npoints = " << npoints << endl;
+
+  // add landmarks terms
+  int ndata = landmarks.size();
+  nterms += ndata * 3;
+  nrows += ndata * 3;
+
+  //cout << "ndata = " << ndata << endl;
+
+  // add prior terms
+  //int nprior = S.NumVertices();
+  int nprior = fixed_faces_boundary_vertices.size();
+  nterms += nprior * 3;
+  nrows += nprior * 3;
+
+  //cout << "nprior = " << nprior << endl;
+
+  // add distortion terms
+  // the number of matrix elements in distortion term
+  int ndistortion = 0;
+  for (int i=0;i<nverts;++i) {
+    if(vertex_index_map[i] >= 0) {
+      auto& Ni = N[i];
+      ndistortion += (Ni.size() + 1);
+    }
+  }
+  ndistortion *= 9;
+
+  //cout << "ndistortion = " << valid_vertices.size() << endl;
+
+  nterms += ndistortion;
+  //nrows += S.NumVertices() * 3;
+  nrows += valid_vertices.size() * 3;
+
+  SparseMatrixd M_lap(valid_vertices.size()*3, ncols);
+  SparseMatrixd M_lap_T, M_lapTM_lap;
+
+  // TODO: remember to mul w_dist back to M_lap_T and w_dist^2 to M_lapTM_lap
+  {
+    // Laplacian distortion term
+    vector<Tripletd> M_coeffs;
+    M_coeffs.reserve(100000);
+
+    PhGUtils::Timer tdist;
+    tdist.tic();
+    int roffset = 0;
+    //cout << "assembling Laplacian terms ..." << endl;
+    for (int i = 0; i < valid_vertices.size(); ++i) {
+      int vi = valid_vertices[i];
+      auto& Ti = Tm[vi];
+      auto& Ni = N[vi];
+      double wi = 1.0;
+
+      //cout << Ti << endl;
+
+      //int istart = i * 3;
+      int istart = vertex_index_map[vi] * 3;
+      assert(istart >= 0);
+
+      // deformation part
+      //M.append(roffset+istart+0, istart+0, wi);
+      //M.append(roffset+istart+1, istart+1, wi);
+      //M.append(roffset+istart+2, istart+2, wi);
+
+      M_coeffs.push_back(Tripletd(roffset+istart+0, istart+0, (1 - Ti(0, 0))*wi));
+      M_coeffs.push_back(Tripletd(roffset+istart+0, istart+1, (0 - Ti(0, 1))*wi));
+      M_coeffs.push_back(Tripletd(roffset+istart+0, istart+2, (0 - Ti(0, 2))*wi));
+
+      M_coeffs.push_back(Tripletd(roffset+istart+1, istart+0, (0 - Ti(1, 0))*wi));
+      M_coeffs.push_back(Tripletd(roffset+istart+1, istart+1, (1 - Ti(1, 1))*wi));
+      M_coeffs.push_back(Tripletd(roffset+istart+1, istart+2, (0 - Ti(1, 2))*wi));
+
+      M_coeffs.push_back(Tripletd(roffset+istart+2, istart+0, (0 - Ti(2, 0))*wi));
+      M_coeffs.push_back(Tripletd(roffset+istart+2, istart+1, (0 - Ti(2, 1))*wi));
+      M_coeffs.push_back(Tripletd(roffset+istart+2, istart+2, (1 - Ti(2, 2))*wi));
+
+      int j = 1;
+      double wij = -1.0 / Ni.size();
+      for (auto Nij : Ni) {
+        //int jstart = Nij * 3;
+        int jstart = vertex_index_map[Nij] * 3;
+        assert(jstart >= 0);
+        int joffset = j * 3; ++j;
+        //M.append(roffset+istart+0, jstart+0, wij*wi);
+        //M.append(roffset+istart+1, jstart+1, wij*wi);
+        //M.append(roffset+istart+2, jstart+2, wij*wi);
+
+        M_coeffs.push_back(Tripletd(roffset+istart+0, jstart+0, (wij - Ti(0, joffset+0))*wi));
+        M_coeffs.push_back(Tripletd(roffset+istart+0, jstart+1, (  0 - Ti(0, joffset+1))*wi));
+        M_coeffs.push_back(Tripletd(roffset+istart+0, jstart+2, (  0 - Ti(0, joffset+2))*wi));
+
+        M_coeffs.push_back(Tripletd(roffset+istart+1, jstart+0, (  0 - Ti(1, joffset+0))*wi));
+        M_coeffs.push_back(Tripletd(roffset+istart+1, jstart+1, (wij - Ti(1, joffset+1))*wi));
+        M_coeffs.push_back(Tripletd(roffset+istart+1, jstart+2, (  0 - Ti(1, joffset+2))*wi));
+
+        M_coeffs.push_back(Tripletd(roffset+istart+2, jstart+0, (  0 - Ti(2, joffset+0))*wi));
+        M_coeffs.push_back(Tripletd(roffset+istart+2, jstart+1, (  0 - Ti(2, joffset+1))*wi));
+        M_coeffs.push_back(Tripletd(roffset+istart+2, jstart+2, (wij - Ti(2, joffset+2))*wi));
+      }
+    }
+
+    M_lap.setFromTriplets(M_coeffs.begin(), M_coeffs.end());
+    M_lap_T = M_lap.transpose();
+    M_lapTM_lap = (M_lap_T * M_lap).pruned();
+
+    tdist.toc("assembling distortion term");
+  }
+  #endif
+  cout << "check point 1" << endl;
+
+  BasicMesh D = S; // make a copy of the source mesh
 
   // main deformation loop
   int iters = 0;
@@ -187,6 +345,9 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
     Efit /= npoints;
     ColorStream(ColorOutput::Red)<< "Efit = " << Efit;
 
+#if USE_PRECOMPUTED_LAPLACIAN_TERM
+    // Nothing to do here
+#else
     // Establish vertex-index mapping
     vertex_index_map.clear();
     vertex_index_map.resize(S.NumVertices(), -1);
@@ -263,12 +424,10 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
     nterms += ndistortion;
     //nrows += S.NumVertices() * 3;
     nrows += valid_vertices.size() * 3;
+#endif
 
     //cout << "nterms = " << nterms << endl;
     //cout << "nrows = " << nrows << endl;
-
-    using Tripletd = Eigen::Triplet<double>;
-    using SparseMatrixd = Eigen::SparseMatrix<double, Eigen::RowMajor>;
 
     vector<Tripletd> M_coeffs;
     M_coeffs.reserve(nterms);
@@ -407,6 +566,9 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
     #endif
     tprior.toc("assembling prior term");
 
+#if USE_PRECOMPUTED_LAPLACIAN_TERM
+    // Nothing to do here since it's pre-computed
+#else
     // Laplacian distortion term
     PhGUtils::Timer tdist;
     tdist.tic();
@@ -465,6 +627,7 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
       }
     }
     tdist.toc("assembling distortion term");
+#endif
 
     #if 0
     {
@@ -494,8 +657,10 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
 
     M.setFromTriplets(M_coeffs.begin(), M_coeffs.end());
 
-    auto Mt = M.transpose();
-    auto MtM = (Mt * M).pruned();
+    SparseMatrixd Mt = M.transpose();
+    //SparseMatrixd M_lapTM_lap_weighted = M_lapTM_lap * (w_dist * w_dist);
+    SparseMatrixd MtM = (Mt * M).pruned();
+    MtM += M_lapTM_lap * (w_dist * w_dist);
 
     // compute M' * b
     //cout << "computing M'*b..." << endl;
