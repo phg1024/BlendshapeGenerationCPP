@@ -64,7 +64,8 @@ private:
                                        double beta, double gamma,
                                        const vector <vector<PhGUtils::Matrix3x3d>> &prior,
                                        const MatrixXd& w_prior,
-                                       const vector<int> stationary_indices,
+                                       const vector<int> &stationary_vertices,
+                                       const vector<bool> &stationary_faces_set,
                                        bool refine_neutral_only = true);
 
   vector <BasicMesh> RefineBlendshapes_EBFR(const vector <BasicMesh> &S,
@@ -84,7 +85,8 @@ private:
                            const VectorXd &w0,  // init value
                            const VectorXd &wp,  // prior
                            double w_prior,
-                           int itmax);
+                           int itmax,
+                           const vector<int>& valid_vertices = vector<int>());
 
 protected:
   string FullFile(const fs::path& path, const string& filename) {

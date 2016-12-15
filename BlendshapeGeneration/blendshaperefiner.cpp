@@ -337,25 +337,48 @@ private:
   const double *mprior;
 };
 
-VectorXd BlendshapeRefiner::EstimateWeights(const BasicMesh &S, const BasicMesh &B0, const vector <MatrixX3d> &dB,
-                                            const VectorXd &w0, const VectorXd &wp, double w_prior, int itmax) {
+VectorXd BlendshapeRefiner::EstimateWeights(
+  const BasicMesh &S,
+  const BasicMesh &B0,
+  const vector <MatrixX3d> &dB,
+  const VectorXd &w0,
+  const VectorXd &wp,
+  double w_prior,
+  int itmax,
+  const vector<int>& valid_vertices
+) {
+
   VectorXd w = w0;
 
   Problem problem;
 
   // add all constraints
-  // TODO add only the vertices in the front side
-  const int num_verts = S.NumVertices();
-  for(int i=0;i<num_verts;++i) {
-    auto vS = S.vertex(i);
-    auto vB0 = B0.vertex(i);
-    double dx = vS[0] - vB0[0];
-    double dy = vS[1] - vB0[1];
-    double dz = vS[2] - vB0[2];
+  if (valid_vertices.empty()) {
+    const int num_verts = S.NumVertices();
+    for(int i=0;i<num_verts;++i) {
+      auto vS = S.vertex(i);
+      auto vB0 = B0.vertex(i);
+      double dx = vS[0] - vB0[0];
+      double dy = vS[1] - vB0[1];
+      double dz = vS[2] - vB0[2];
 
-    CostFunction *costfun = new AutoDiffCostFunction<PointResidual, 3, 46>(
-      new PointResidual(dx, dy, dz, i, dB));
-    problem.AddResidualBlock(costfun, NULL, w.data()+1);
+      CostFunction *costfun = new AutoDiffCostFunction<PointResidual, 3, 46>(
+        new PointResidual(dx, dy, dz, i, dB));
+      problem.AddResidualBlock(costfun, NULL, w.data()+1);
+    }
+  } else {
+    // add only the valid vertices for estimating weights
+    for(auto i : valid_vertices) {
+      auto vS = S.vertex(i);
+      auto vB0 = B0.vertex(i);
+      double dx = vS[0] - vB0[0];
+      double dy = vS[1] - vB0[1];
+      double dz = vS[2] - vB0[2];
+
+      CostFunction *costfun = new AutoDiffCostFunction<PointResidual, 3, 46>(
+        new PointResidual(dx, dy, dz, i, dB));
+      problem.AddResidualBlock(costfun, NULL, w.data()+1);
+    }
   }
 
   // add prior if necessary
@@ -412,7 +435,8 @@ vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> 
                                                        double beta, double gamma,
                                                        const vector <vector<PhGUtils::Matrix3x3d>> &prior,
                                                        const MatrixXd& w_prior,
-                                                       const vector<int> stationary_indices,
+                                                       const vector<int> &stationary_vertices,
+                                                       const vector<bool> &stationary_faces_set,
                                                        bool refine_neutral_only) {
   int nfaces = B00.NumFaces();
   int nverts = B00.NumVertices();
@@ -626,7 +650,7 @@ vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> 
   MeshTransferer transferer;
   transferer.setSource(B00);
   transferer.setTarget(B00);
-  transferer.setStationaryVertices(stationary_indices);
+  transferer.setStationaryVertices(stationary_vertices);
 
   vector<BasicMesh> B_new(nshapes + 1);
 
@@ -655,7 +679,7 @@ vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> 
 
   transferer.setSource(B0);
   transferer.setTarget(B0);
-  transferer.setStationaryVertices(stationary_indices);
+  transferer.setStationaryVertices(stationary_vertices);
 
   // @FIXME try do deformation transfer on the new neutral shape instead of using the
   // computed triangle gradients.
@@ -793,6 +817,15 @@ void BlendshapeRefiner::Refine() {
     return v[2] <= -0.45;
   });
 
+  vector<int> stationary_faces = B00.filterFaces([=](const Vector3i& f) {
+    Vector3d center = (B00.vertex(f[0]) + B00.vertex(f[1]) + B00.vertex(f[2])) / 3.0;
+    return center[2] <= -0.45;
+  });
+
+  // For faster test of stationary faces
+  vector<bool> stationary_faces_set(B00.NumFaces(), false);
+  for(auto i : stationary_faces) stationary_faces_set[i] = true;
+
   // estimate initial set of blendshape weights
   vector<VectorXd> alpha(num_poses);
   for(int i=0;i<num_poses;++i) {
@@ -836,10 +869,10 @@ void BlendshapeRefiner::Refine() {
     double eta = eta_max + iters/maxIters*(eta_min-eta_max);
 
     // Refine the neutral shape only
-    auto B_new = RefineBlendshapes(S, Sgrad, A, B, B00, alpha, beta, gamma, prior, w_prior, stationary_indices);
+    auto B_new = RefineBlendshapes(S, Sgrad, A, B, B00, alpha, beta, gamma, prior, w_prior, stationary_indices, stationary_faces_set);
 
     // Refine all blendshapes
-    B_new = RefineBlendshapes(S, Sgrad, A, B_new, B_new[0], alpha, beta, gamma, prior, w_prior, stationary_indices, false);
+    B_new = RefineBlendshapes(S, Sgrad, A, B_new, B_new[0], alpha, beta, gamma, prior, w_prior, stationary_indices, stationary_faces_set, false);
 
     // convergence test
     VectorXd B_norm(num_shapes+1);
@@ -863,7 +896,9 @@ void BlendshapeRefiner::Refine() {
     VectorXd alpha_norm(num_poses);
     vector<VectorXd> alpha_new(num_poses);
     for(int i=0;i<num_poses;++i) {
-      alpha_new[i] = EstimateWeights(S[i], B[0], dB, alpha[i], alpha_init[i], eta, 2);
+      alpha_new[i] = EstimateWeights(S[i], B[0], dB,
+                                     alpha[i], alpha_init[i], eta, 2,
+                                     stationary_indices);
       auto alpha_diff = alpha_new[i] - alpha[i];
       alpha_norm(i) = alpha_diff.norm();
     }
