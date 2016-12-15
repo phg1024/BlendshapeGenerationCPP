@@ -23,12 +23,20 @@ BlendshapeRefiner::BlendshapeRefiner(json settings) {
     blendshapes_subdivided = false;
   }
 
-  model = MultilinearModel("/home/phg/Data/Multilinear/blendshape_core.tensor");
+  reporter = Reporter("Blendshape Refiner");
 
-  model_prior.load("/home/phg/Data/Multilinear/blendshape_u_0_aug.tensor",
-                   "/home/phg/Data/Multilinear/blendshape_u_1_aug.tensor");
+  {
+    reporter.Tic("Initialization");
 
-  template_mesh = BasicMesh("/home/phg/Data/Multilinear/template.obj");
+    model = MultilinearModel("/home/phg/Data/Multilinear/blendshape_core.tensor");
+
+    model_prior.load("/home/phg/Data/Multilinear/blendshape_u_0_aug.tensor",
+                     "/home/phg/Data/Multilinear/blendshape_u_1_aug.tensor");
+
+    template_mesh = BasicMesh("/home/phg/Data/Multilinear/template.obj");
+
+    reporter.Toc();
+  }
   cout << "Blendshape refiner created." << endl;
 }
 
@@ -71,19 +79,25 @@ void BlendshapeRefiner::SetBlendshapesPath(const string& path) {
 }
 
 void BlendshapeRefiner::LoadTemplateMeshes(const string &path, const string &basename) {
+  reporter.Tic("Loading template meshes");
+
   A.resize(num_shapes + 1);
 
   for(int i=0;i<=num_shapes;++i) {
     A[i].LoadOBJMesh(path + basename + to_string(i) + ".obj");
   }
+
+  reporter.Toc();
 }
 
 void BlendshapeRefiner::LoadInitialBlendshapes() {
+  reporter.Tic("Loading initial blendshapes");
   Binit.resize(num_shapes + 1);
 
   for(int i=0;i<=num_shapes;++i) {
     Binit[i].LoadOBJMesh( (input_blendshapes_path / fs::path("B_" + to_string(i) + ".obj")).string() );
   }
+  reporter.Toc();
 }
 
 void BlendshapeRefiner::LoadSelectionFile(const string& selection_filename) {
@@ -108,6 +122,8 @@ namespace {
 }
 
 void BlendshapeRefiner::LoadInputReconstructionResults(const string &settings_filename) {
+  reporter.Tic("Loading input reconstruction results");
+
   vector<pair<string, string>> image_points_filenames = ParseSettingsFile( (resources_path / fs::path(settings_filename)).string() );
 
   image_bundles.resize(selection_indices.size());
@@ -143,6 +159,8 @@ void BlendshapeRefiner::LoadInputReconstructionResults(const string &settings_fi
 
   // Set the number of poses
   num_poses = selection_indices.size();
+
+  reporter.Toc();
 }
 
 MatrixXd BlendshapeRefiner::LoadPointCloud(const string &filename, const glm::dmat4& Rmat_inv) {
@@ -168,6 +186,8 @@ MatrixXd BlendshapeRefiner::LoadPointCloud(const string &filename, const glm::dm
 }
 
 void BlendshapeRefiner::LoadInputPointClouds() {
+  reporter.Tic("Loading input point clouds");
+
   // Load all points files
   point_clouds.resize(num_poses);
   for(int i=0;i<num_poses;++i) {
@@ -190,6 +210,8 @@ void BlendshapeRefiner::LoadInputPointClouds() {
     point_clouds[i] = LoadPointCloud( (point_clouds_path / fs::path("masked_optimized_point_cloud_" + to_string(point_cloud_idx) + ".txt")).string(),
                                       R );
   }
+
+  reporter.Toc();
 }
 
 namespace {
@@ -210,6 +232,8 @@ namespace {
 }
 
 void BlendshapeRefiner::CreateTrainingShapes() {
+  reporter.Tic("Creating training shapes");
+
   S0.resize(num_poses);
   for(int i=0;i<num_poses;++i) {
     ColorStream(ColorOutput::Green)<< "creating initial training shape " << i;
@@ -249,9 +273,13 @@ void BlendshapeRefiner::CreateTrainingShapes() {
     S[i].Write( InBlendshapesDirectory("S0_" + to_string(i) + ".obj") );
   }
   ColorStream(ColorOutput::Blue)<< "refined training shapes created.";
+
+  reporter.Toc();
 }
 
 void BlendshapeRefiner::InitializeBlendshapes() {
+  reporter.Tic("Initializing blendshapes");
+
   if(use_init_blendshapes) {
     // Nothing to do
   } else {
@@ -296,6 +324,8 @@ void BlendshapeRefiner::InitializeBlendshapes() {
     Ti.ComputeNormals();
     Ti.Write( InBlendshapesDirectory("S0_verify_" + std::to_string(i) + ".obj") );
   }
+
+  reporter.Toc();
 }
 
 struct PointResidual {
@@ -347,6 +377,8 @@ VectorXd BlendshapeRefiner::EstimateWeights(
   int itmax,
   const vector<int>& valid_vertices
 ) {
+  boost::timer::auto_cpu_timer t("Expression weights estimation finished in %w seconds.\n");
+  reporter.Tic("Expression weights estimation");
 
   VectorXd w = w0;
 
@@ -423,6 +455,8 @@ VectorXd BlendshapeRefiner::EstimateWeights(
 
   cout << summary.BriefReport() << endl;
 
+  reporter.Toc();
+
   return w;
 }
 
@@ -438,6 +472,9 @@ vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> 
                                                        const vector<int> &stationary_vertices,
                                                        const vector<bool> &stationary_faces_set,
                                                        bool refine_neutral_only) {
+  boost::timer::auto_cpu_timer t("Blendshapes refinement finished in %w seconds.\n");
+  reporter.Tic("Blendshapes refinement");
+
   int nfaces = B00.NumFaces();
   int nverts = B00.NumVertices();
 
@@ -488,162 +525,187 @@ vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> 
     }
   }
 
-  ColorStream(ColorOutput::Blue) << "computing per-face gradients.";
-  vector<MatrixXd> M(nfaces);
+  ColorStream(ColorOutput::Blue) << "computing per-face deformation gradients.";
+  vector<MatrixXd> M(nfaces, MatrixXd(nshapes+1, 9));
 
-#pragma omp parallel for
-  for(int j=0;j<nfaces;++j) {
-    // b_data
-    VectorXd b_data(nrows_data);
-    for(int i=0;i<nposes;++i) {
-      auto Sgrad_ij = Sgrad[i][j];
-      for(int k=0;k<9;++k) b_data(i*9+k) = Sgrad_ij(k);
-    }
-    b_data *= w_data;
+  {
+    boost::timer::auto_cpu_timer t("Per-face deformation gradients optimization finished in %w seconds.\n");
 
-    // A_reg
-    vector<Tripletd> Areg_coeffs;
-    const int nrows_reg = 9 * nshapes;
-    const int ncols_reg = 9 * (nshapes + 1);
+    #pragma omp parallel for
+      for(int j=0;j<nfaces;++j) {
+        // skip if the face is stationary
+        /*
+        if (stationary_faces_set[j]) {
+          M[j] = MatrixXd(nshapes + 1, 9);
+          for(int i=0;i<=nshapes;++i) {
+            auto B0ji_ptr = B00grads[i].rowptr(j);
+            for(int k=0;k<9;++k) M[j](i, k) = B0ji_ptr[k];
+          }
+          continue;
+        }
+        */
 
-    const double w_reg = 0.5;
-    //MatrixXd A_reg = MatrixXd::Zero(nrows_reg, ncols_reg);
-    for(int i=0;i<nshapes;++i) {
-      int row_offset = nrows_data + i * 9;
-      MatrixXd A_reg_i = MatrixXd::Zero(9, ncols_reg);
+        // b_data
+        VectorXd b_data(nrows_data);
+        for(int i=0;i<nposes;++i) {
+          auto Sgrad_ij = Sgrad[i][j];
+          for(int k=0;k<9;++k) b_data(i*9+k) = Sgrad_ij(k);
+        }
+        b_data *= w_data;
 
-      const double wij = beta * w_prior(i, j);
+        // A_reg
+        vector<Tripletd> Areg_coeffs;
+        const int estimated_Areg_usage = 2070;
+        Areg_coeffs.reserve(estimated_Areg_usage);
+        const int nrows_reg = 9 * nshapes;
+        const int ncols_reg = 9 * (nshapes + 1);
 
-      const PhGUtils::Matrix3x3d& Gij = prior[i][j];
+        const double w_reg = 0.5;
+        //MatrixXd A_reg = MatrixXd::Zero(nrows_reg, ncols_reg);
+        for(int i=0;i<nshapes;++i) {
+          int row_offset = nrows_data + i * 9;
+          MatrixXd A_reg_i = MatrixXd::Zero(9, ncols_reg);
 
-      for(int ii=0;ii<3;++ii) {
-        for(int jj=0;jj<3;++jj) {
-          // A_reg_i.block<3,3>(ii*3, jj*3) = -1 * MatrixXd::Identity(3, 3) * Gij(ii, jj) * wij;
+          const double wij = beta * w_prior(i, j);
 
-          for(int k=0;k<3;++k) {
-            Areg_coeffs.push_back(Tripletd(row_offset+ii*3+k, jj*3+k, -wij * Gij(ii, jj) * w_reg));
-            if(ii == jj) {
-              Areg_coeffs.push_back(Tripletd(row_offset+ii*3+k, jj*3+k, wij* w_reg));
+          const PhGUtils::Matrix3x3d& Gij = prior[i][j];
+
+          for(int ii=0;ii<3;++ii) {
+            for(int jj=0;jj<3;++jj) {
+              // A_reg_i.block<3,3>(ii*3, jj*3) = -1 * MatrixXd::Identity(3, 3) * Gij(ii, jj) * wij;
+
+              for(int k=0;k<3;++k) {
+                Areg_coeffs.push_back(Tripletd(row_offset+ii*3+k, jj*3+k, -wij * Gij(ii, jj) * w_reg));
+                if(ii == jj) {
+                  Areg_coeffs.push_back(Tripletd(row_offset+ii*3+k, jj*3+k, wij* w_reg));
+                }
+              }
             }
           }
+
+          //A_reg_i.block<9,9>(0, 0) += MatrixXd::Identity(9, 9) * wij;
+          //A_reg_i.block<9,9>(0, (i+1)*9) = MatrixXd::Identity(9, 9) * wij;
+          int col_offset = (i+1) * 9;
+          for(int k=0;k<9;++k) {
+            Areg_coeffs.push_back(Tripletd(row_offset + k, col_offset+k, wij*w_reg));
+          }
+
+          //A_reg.middleRows(i*9, 9) = A_reg_i;
+        }
+        //A_reg *= w_reg;
+
+        // b_reg
+        VectorXd b_reg = VectorXd::Zero(nrows_reg);
+        b_reg *= w_reg;
+
+        // A_sim
+        // FIXME try include all shapes to provide better constraints
+        double w_sim;
+        int nrows_sim;
+        int ncols_sim;
+        vector<Tripletd> Asim_coeffs;
+        const int estimated_Asim_usage = 9;
+        Asim_coeffs.reserve(estimated_Asim_usage);
+        VectorXd b_sim;
+        if(refine_neutral_only) {
+          w_sim = 0.01;
+          nrows_sim = 9;
+          ncols_sim = 9 * (nshapes + 1);
+
+          for(int k=0;k<9;++k) {
+            Asim_coeffs.push_back(Tripletd(nrows_data + nrows_reg + k, k, w_sim));
+          }
+
+          // b_sim
+          b_sim = VectorXd(nrows_sim);
+          for(int k=0;k<9;++k) b_sim(k) = B00grad(j, k) * w_sim;
+        } else {
+          w_sim = 0.25;
+          nrows_sim = 9 * (nshapes + 1);
+          ncols_sim = 9 * (nshapes + 1);
+
+          Asim_coeffs;
+          for(int k=0;k<9*(nshapes+1);++k) {
+            Asim_coeffs.push_back(Tripletd(nrows_data + nrows_reg + k, k, w_sim));
+          }
+
+          // b_sim
+          b_sim = VectorXd(nrows_sim);
+          for(int k=0;k<9;++k) b_sim(k) = B00grads[0](j, k) * w_sim;
+          for(int i=1;i<=nshapes;++i) {
+            for(int k=0;k<9;++k) b_sim(i*9+k) = (B00grads[i](j, k) - B00grads[0](j, k))* w_sim;
+          }
+        }
+
+        const int nrows_total = nrows_data + nrows_reg + nrows_sim;
+        const int ncols_total = ncols_data;
+
+
+        //MatrixXd A(nrows_total, ncols_total);
+        //A.topRows(nrows_data) = A_data;
+        //A.middleRows(nrows_data, nrows_reg) = A_reg;
+        //A.bottomRows(nrows_sim) = A_sim;
+
+        Eigen::SparseMatrix<double> A(nrows_total, ncols_total);
+        vector<Tripletd> A_coeffs(0);
+        A_coeffs.reserve(Adata_coeffs.size() + Areg_coeffs.size() + Asim_coeffs.size());
+        A_coeffs.insert(A_coeffs.end(), Adata_coeffs.begin(), Adata_coeffs.end());
+        A_coeffs.insert(A_coeffs.end(), Areg_coeffs.begin(), Areg_coeffs.end());
+        A_coeffs.insert(A_coeffs.end(), Asim_coeffs.begin(), Asim_coeffs.end());
+
+        //cout << Adata_coeffs.size() << ", " << Areg_coeffs.size() << ", " << Asim_coeffs.size() << endl;
+        //cout << A_coeffs.size() << endl;
+
+        if(0) {
+          ofstream fA("A_coeffs.txt");
+          for(Tripletd& coeffs : A_coeffs) {
+            fA << coeffs.row() << ',' << coeffs.col() << ',' << coeffs.value() << endl;
+          }
+          fA.close();
+        }
+
+        A.setFromTriplets(A_coeffs.begin(), A_coeffs.end());
+        A.makeCompressed();
+
+        Eigen::SparseMatrix<double> AtA = (A.transpose() * A).pruned();
+
+        const double epsilon = 0.0;//1e-9;
+        Eigen::SparseMatrix<double> eye(ncols_total, ncols_total);
+        for(int j=0;j<ncols_total;++j) eye.insert(j, j) = epsilon;
+        AtA += eye;
+
+        CholmodSupernodalLLT<Eigen::SparseMatrix<double>> solver;
+        solver.compute(AtA);
+
+        VectorXd b(nrows_total);
+        b.topRows(nrows_data) = b_data;
+        b.middleRows(nrows_data, nrows_reg) = b_reg;
+        b.bottomRows(nrows_sim) = b_sim;
+
+        /*
+        JacobiSVD<MatrixXd> svd(A.transpose() * A);
+        double cond = svd.singularValues()(0)
+                      / svd.singularValues()(svd.singularValues().size()-1);
+        cout << cond << endl;
+
+        VectorXd Mv = (A.transpose() * A).ldlt().solve(A.transpose() * b);
+        */
+
+        //VectorXd Atb = A.transpose() * b;
+        VectorXd Mv = solver.solve(A.transpose() * b);
+        if(solver.info()!=Success) {
+          cerr << "Failed to solve A\\b." << endl;
+          exit(-1);
+        }
+
+        // Store it into M
+        //M[j] = MatrixXd(nshapes + 1, 9);
+        for(int i=0;i<=nshapes;++i) {
+          M[j].row(i) = Mv.middleRows(i*9, 9).transpose();
         }
       }
-
-      //A_reg_i.block<9,9>(0, 0) += MatrixXd::Identity(9, 9) * wij;
-      //A_reg_i.block<9,9>(0, (i+1)*9) = MatrixXd::Identity(9, 9) * wij;
-      int col_offset = (i+1) * 9;
-      for(int k=0;k<9;++k) {
-        Areg_coeffs.push_back(Tripletd(row_offset + k, col_offset+k, wij*w_reg));
-      }
-
-      //A_reg.middleRows(i*9, 9) = A_reg_i;
-    }
-    //A_reg *= w_reg;
-
-    // b_reg
-    VectorXd b_reg = VectorXd::Zero(nrows_reg);
-    b_reg *= w_reg;
-
-    // A_sim
-    // FIXME try include all shapes to provide better constraints
-    double w_sim;
-    int nrows_sim;
-    int ncols_sim;
-    vector<Tripletd> Asim_coeffs;
-    VectorXd b_sim;
-    if(refine_neutral_only) {
-      w_sim = 0.01;
-      nrows_sim = 9;
-      ncols_sim = 9 * (nshapes + 1);
-
-      for(int k=0;k<9;++k) {
-        Asim_coeffs.push_back(Tripletd(nrows_data + nrows_reg + k, k, w_sim));
-      }
-
-      // b_sim
-      b_sim = VectorXd(nrows_sim);
-      for(int k=0;k<9;++k) b_sim(k) = B00grad(j, k) * w_sim;
-    } else {
-      w_sim = 0.25;
-      nrows_sim = 9 * (nshapes + 1);
-      ncols_sim = 9 * (nshapes + 1);
-
-      Asim_coeffs;
-      for(int k=0;k<9*(nshapes+1);++k) {
-        Asim_coeffs.push_back(Tripletd(nrows_data + nrows_reg + k, k, w_sim));
-      }
-
-      // b_sim
-      b_sim = VectorXd(nrows_sim);
-      for(int k=0;k<9;++k) b_sim(k) = B00grads[0](j, k) * w_sim;
-      for(int i=1;i<=nshapes;++i) {
-        for(int k=0;k<9;++k) b_sim(i*9+k) = (B00grads[i](j, k) - B00grads[0](j, k))* w_sim;
-      }
-    }
-
-    const int nrows_total = nrows_data + nrows_reg + nrows_sim;
-    const int ncols_total = ncols_data;
-
-
-    //MatrixXd A(nrows_total, ncols_total);
-    //A.topRows(nrows_data) = A_data;
-    //A.middleRows(nrows_data, nrows_reg) = A_reg;
-    //A.bottomRows(nrows_sim) = A_sim;
-
-    Eigen::SparseMatrix<double> A(nrows_total, ncols_total);
-    vector<Tripletd> A_coeffs = Adata_coeffs;
-    A_coeffs.insert(A_coeffs.end(), Areg_coeffs.begin(), Areg_coeffs.end());
-    A_coeffs.insert(A_coeffs.end(), Asim_coeffs.begin(), Asim_coeffs.end());
-
-    if(0) {
-      ofstream fA("A_coeffs.txt");
-      for(Tripletd& coeffs : A_coeffs) {
-        fA << coeffs.row() << ',' << coeffs.col() << ',' << coeffs.value() << endl;
-      }
-      fA.close();
-    }
-
-    A.setFromTriplets(A_coeffs.begin(), A_coeffs.end());
-    A.makeCompressed();
-
-    Eigen::SparseMatrix<double> AtA = (A.transpose() * A).pruned();
-
-    const double epsilon = 0.0;//1e-9;
-    Eigen::SparseMatrix<double> eye(ncols_total, ncols_total);
-    for(int j=0;j<ncols_total;++j) eye.insert(j, j) = epsilon;
-    AtA += eye;
-
-    CholmodSupernodalLLT<Eigen::SparseMatrix<double>> solver;
-    solver.compute(AtA);
-
-    VectorXd b(nrows_total);
-    b.topRows(nrows_data) = b_data;
-    b.middleRows(nrows_data, nrows_reg) = b_reg;
-    b.bottomRows(nrows_sim) = b_sim;
-
-    /*
-    JacobiSVD<MatrixXd> svd(A.transpose() * A);
-    double cond = svd.singularValues()(0)
-                  / svd.singularValues()(svd.singularValues().size()-1);
-    cout << cond << endl;
-
-    VectorXd Mv = (A.transpose() * A).ldlt().solve(A.transpose() * b);
-    */
-
-    VectorXd Atb = A.transpose() * b;
-    VectorXd Mv = solver.solve(Atb);
-    if(solver.info()!=Success) {
-      cerr << "Failed to solve A\\b." << endl;
-      exit(-1);
-    }
-
-    // Store it into M
-    M[j] = MatrixXd(nshapes + 1, 9);
-    for(int i=0;i<=nshapes;++i) {
-      M[j].row(i) = Mv.middleRows(i*9, 9).transpose();
-    }
+      ColorStream(ColorOutput::Blue) << "done.";
   }
-  ColorStream(ColorOutput::Blue) << "done.";
 
   // reconstruct the blendshapes now
   ColorStream(ColorOutput::Blue) << "reconstructing blendshapes.";
@@ -688,9 +750,11 @@ vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> 
   for(int i=1;i<=nshapes;++i) {
     ColorStream(ColorOutput::Green)<< "reconstructing blendshapes " << i;
     if(refine_neutral_only) {
+      // Apply the deformation gradients of A0->Ai on B0 to create Bi
       transferer.setSource(A[0]);
       B_new[i] = transferer.transfer(A[i]);
     } else {
+      // Apply the optimized deformation gradients of B0->Bi on B0 to create Bi
       vector<PhGUtils::Matrix3x3d> Bgrad_i(nfaces);
       for(int j=0;j<nfaces;++j) {
         auto &Mj = M[j];
@@ -710,6 +774,8 @@ vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> 
   for(int i=0;i<num_shapes+1;++i) {
     B_new[i].Write( InBlendshapesDirectory("B_refined_"+to_string(i)+".obj") );
   }
+
+  reporter.Toc();
 
   return B_new;
 }
@@ -789,9 +855,11 @@ void BlendshapeRefiner::Refine() {
   };
 
   // Computer prior from A
+  reporter.Tic("Computing prior");
   vector<vector<PhGUtils::Matrix3x3d>> prior;
   MatrixXd w_prior;
   tie(prior, w_prior) = ComputerPrior(A);
+  reporter.Toc();
 
   /*
   ofstream fprior("prior.txt");
@@ -806,6 +874,7 @@ void BlendshapeRefiner::Refine() {
   ColorStream(ColorOutput::Blue)<< "priors computed.";
 
   // compute the delta shapes
+  reporter.Tic("Misc preparation");
   vector<MatrixX3d> dB(num_shapes);
   for(int i=0;i<num_shapes;++i) {
     dB[i] = B[i+1].vertices() - B[0].vertices();
@@ -844,6 +913,7 @@ void BlendshapeRefiner::Refine() {
       Sgrad[i][j] = triangleGradient(S[i], j);
     }
   }
+  reporter.Toc();
 
   ColorStream(ColorOutput::Red)<< "initialization done.";
 
@@ -925,6 +995,8 @@ void BlendshapeRefiner::Refine() {
 
     // Optional: subdivide all meshes
     if(do_subdivision){
+      reporter.Tic("Subdivision");
+
       ColorStream(ColorOutput::Blue) << "Subdividing the meshes...";
       // Subdivide every mesh
       // Subdivide A and update prior, w_prior, stationary_indices
@@ -955,11 +1027,14 @@ void BlendshapeRefiner::Refine() {
       }
 
       num_faces *= 4;
+
+      reporter.Toc();
     }
 
     // The reconstructed mesh are updated using the new set of blendshape
     // weights, need to use laplacian deformation to refine them again
     ColorStream(ColorOutput::Blue) << "Updating the training shapes...";
+    reporter.Tic("Update training shapes");
     #pragma omp parallel for
     for(int i=0;i<num_poses;++i) {
       ColorStream(ColorOutput::Green) << "Updating training shape " << i << "...";
@@ -985,6 +1060,7 @@ void BlendshapeRefiner::Refine() {
         Sgrad[i][j] = triangleGradient(S[i], j);
       }
     }
+    reporter.Toc();
   }
 
   // write out the blendshapes

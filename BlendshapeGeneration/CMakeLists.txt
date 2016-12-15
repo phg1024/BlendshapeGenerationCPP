@@ -99,7 +99,8 @@ target_link_libraries(BlendshapeGeneration
                       ${PhGLib}
                       basicmesh
                       ioutilities
-                      multilinearmodel)
+                      multilinearmodel
+                      reporter)
 
 add_executable(laplaciandeformation laplaciandeformation.cpp meshdeformer.cpp pointcloud.cpp)
 target_link_libraries(laplaciandeformation

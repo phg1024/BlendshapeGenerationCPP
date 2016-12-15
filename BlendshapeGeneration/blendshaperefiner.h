@@ -10,6 +10,7 @@
 #include <MultilinearReconstruction/ioutilities.h>
 #include <MultilinearReconstruction/multilinearmodel.h>
 #include <MultilinearReconstruction/parameters.h>
+#include <MultilinearReconstruction/reporter.h>
 
 #include "boost/filesystem/operations.hpp"
 #include "boost/filesystem/path.hpp"
@@ -120,6 +121,8 @@ private:
   fs::path blendshapes_path;
   vector<int> selection_indices;
   map<int, int> selection_to_order_map;
+
+  Reporter reporter;
 };
 
 #endif //FACESHAPEFROMSHADING_BLENDSHAPEREFINER_H
