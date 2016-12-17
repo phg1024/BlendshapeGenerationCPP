@@ -39,6 +39,7 @@ protected:
   void computeDistance();
   void drawMesh(const BasicMesh& m);
   void drawMeshWithColor(const BasicMesh& m);
+  void drawMeshVerticesWithColor(const BasicMesh& m);
   void drawColorBar(double, double);
 
 private:
@@ -92,6 +93,7 @@ protected:
   void computeDistance();
   void drawMesh(const BasicMesh &m);
   void drawMeshWithColor(const BasicMesh &m);
+  void drawMeshVerticesWithColor(const BasicMesh& m);
   void drawColorBar(double, double);
 
 private:

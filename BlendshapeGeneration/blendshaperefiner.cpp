@@ -209,6 +209,17 @@ void BlendshapeRefiner::LoadInputPointClouds() {
 
     point_clouds[i] = LoadPointCloud( (point_clouds_path / fs::path("masked_optimized_point_cloud_" + to_string(point_cloud_idx) + ".txt")).string(),
                                       R );
+
+    // Write this out so we can measure the reconstruction error later
+    {
+      ofstream fout( InBlendshapesDirectory("P_" + to_string(i) + ".pts") );
+      for(int j=0;j<point_clouds[i].rows();++j) {
+        const auto& row_j = point_clouds[i].row(j);
+        fout << "v " << row_j[0] << ' ' << row_j[1] << ' ' << row_j[2] << '\n';
+      }
+      fout.close();
+    }
+
   }
 
   reporter.Toc();

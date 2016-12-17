@@ -172,6 +172,11 @@ void OffscreenBlendshapeVisualizer::paint()
   if( mesh.NumFaces() > 0 ) {
     if( refmesh.NumFaces() > 0 ) drawMeshWithColor(mesh);
     else drawMesh(mesh);
+  } else {
+    glDepthFunc(GL_LEQUAL);
+    drawMesh(refmesh);
+    glDepthFunc(GL_ALWAYS);
+    drawMeshVerticesWithColor(mesh);
   }
   disableLighting();
 
@@ -325,12 +330,23 @@ void OffscreenBlendshapeVisualizer::drawMesh(const BasicMesh &m)
   for(int i=0;i<m.NumFaces();++i) {
     auto face_i = m.face(i);
     int v1 = face_i[0], v2 = face_i[1], v3 = face_i[2];
-    auto norm_i = m.normal(i);
-    glNormal3d(norm_i[0], norm_i[1], norm_i[2]);
+
+    // face normal
+    //auto norm_i = m.normal(i);
+    //glNormal3d(norm_i[0], norm_i[1], norm_i[2]);
+
     auto p1 = m.vertex(v1), p2 = m.vertex(v2), p3 = m.vertex(v3);
 
+    auto n1 = m.vertex_normal(v1);
+    glNormal3d(n1[0], n1[1], n1[2]);
     glVertex3d(p1[0], p1[1], p1[2]);
+
+    auto n2 = m.vertex_normal(v2);
+    glNormal3d(n2[0], n2[1], n2[2]);
     glVertex3d(p2[0], p2[1], p2[2]);
+
+    auto n3 = m.vertex_normal(v3);
+    glNormal3d(n3[0], n3[1], n3[2]);
     glVertex3d(p3[0], p3[1], p3[2]);
   }
   glEnd();
@@ -414,6 +430,42 @@ void OffscreenBlendshapeVisualizer::drawMeshWithColor(const BasicMesh &m)
   glEnd();
 }
 
+void OffscreenBlendshapeVisualizer::drawMeshVerticesWithColor(const BasicMesh &m)
+{
+  #if 0
+  double maxVal = *(std::max_element(dists.begin(), dists.end()));
+  double minVal = *(std::min_element(dists.begin(), dists.end()));
+  #else
+  double maxVal = 0.075;
+  double minVal = 0.0;
+  #endif
+
+  glColor4f(0.75, 0.75, 0.75, 1.0);
+
+  glPointSize(2.0);
+  glBegin(GL_POINTS);
+  for(int i=0;i<m.NumVertices();++i) {
+    auto vert_i = m.vertex(i);
+
+    //auto norm_i = m.normal(i);
+    //glNormal3d(norm_i[0], norm_i[1], norm_i[2]);
+
+    auto draw_vertex = [&](double dval, decltype(vert_i) pj) {
+      double hval0 = 1.0 - max(min((dval-minVal)/(maxVal-minVal)/0.67, 1.0), 0.0);
+      if(dval < 0) {
+        hval0 = 0.0;
+      }
+      QColor c0 = QColor::fromHsvF(hval0*0.67, 1.0, 1.0);
+      float colors0[4] = {(float)c0.redF(), (float)c0.greenF(), (float)c0.blueF(), 1.0f};
+      glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, colors0);
+      glVertex3d(pj[0], pj[1], pj[2]);
+    };
+
+    draw_vertex(dists[i], vert_i);
+  }
+  glEnd();
+}
+
 BlendshapeVisualizer::BlendshapeVisualizer(QWidget *parent):
   GL3DCanvas(parent)
 {
@@ -453,6 +505,11 @@ void BlendshapeVisualizer::paintGL()
   if( mesh.NumFaces() > 0 ) {
     if( refmesh.NumFaces() > 0 ) drawMeshWithColor(mesh);
     else drawMesh(mesh);
+  } else {
+    glDepthFunc(GL_LEQUAL);
+    drawMesh(refmesh);
+    glDepthFunc(GL_ALWAYS);
+    drawMeshVerticesWithColor(mesh);
   }
   disableLighting();
 
@@ -617,13 +674,60 @@ void BlendshapeVisualizer::drawMesh(const BasicMesh &m)
   for(int i=0;i<m.NumFaces();++i) {
     auto face_i = m.face(i);
     int v1 = face_i[0], v2 = face_i[1], v3 = face_i[2];
-    auto norm_i = m.normal(i);
-    glNormal3d(norm_i[0], norm_i[1], norm_i[2]);
+
+    // face normal
+    //auto norm_i = m.normal(i);
+    //glNormal3d(norm_i[0], norm_i[1], norm_i[2]);
+
     auto p1 = m.vertex(v1), p2 = m.vertex(v2), p3 = m.vertex(v3);
 
+    auto n1 = m.vertex_normal(v1);
+    glNormal3d(n1[0], n1[1], n1[2]);
     glVertex3d(p1[0], p1[1], p1[2]);
+
+    auto n2 = m.vertex_normal(v2);
+    glNormal3d(n2[0], n2[1], n2[2]);
     glVertex3d(p2[0], p2[1], p2[2]);
+
+    auto n3 = m.vertex_normal(v3);
+    glNormal3d(n3[0], n3[1], n3[2]);
     glVertex3d(p3[0], p3[1], p3[2]);
+  }
+  glEnd();
+}
+
+void BlendshapeVisualizer::drawMeshVerticesWithColor(const BasicMesh &m)
+{
+  #if 0
+  double maxVal = *(std::max_element(dists.begin(), dists.end()));
+  double minVal = *(std::min_element(dists.begin(), dists.end()));
+  #else
+  double maxVal = 0.075;
+  double minVal = 0.0;
+  #endif
+
+  glColor4f(0.75, 0.75, 0.75, 1.0);
+  glBegin(GL_POINTS);
+  for(int i=0;i<m.NumVertices();++i) {
+    auto vert_i = m.vertex(i);
+
+    //auto norm_i = m.normal(i);
+    //glNormal3d(norm_i[0], norm_i[1], norm_i[2]);
+
+    auto draw_vertex = [&](double dval, decltype(vert_i) pj) {
+      double hval0 = 1.0 - max(min((dval-minVal)/(maxVal-minVal)/0.67, 1.0), 0.0);
+      if(dval < 0) {
+        hval0 = 0.0;
+      }
+      QColor c0 = QColor::fromHsvF(hval0*0.67, 1.0, 1.0);
+      float colors0[4] = {(float)c0.redF(), (float)c0.greenF(), (float)c0.blueF(), 1.0f};
+      glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, colors0);
+      //glNormal3d(nj[0], nj[1], nj[2]);
+      glVertex3d(pj[0], pj[1], pj[2]);
+    };
+
+    draw_vertex(dists[i], vert_i);
+
   }
   glEnd();
 }
