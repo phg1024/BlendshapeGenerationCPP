@@ -35,6 +35,10 @@ public:
     }
   }
   void setLandmarks(const vector<int> &lms) { landmarks = lms; }
+  void setLandmarks(const VectorXi& lms) {
+    landmarks.resize(lms.size());
+    for(int i=0;i<lms.size();++i) landmarks[i] = lms(i);
+  }
   void setValidFaces(const vector<int> &fidx) {
     valid_faces = fidx;
 
@@ -132,8 +136,8 @@ public:
     #endif
   }
 
-  BasicMesh deformWithMesh(const BasicMesh &T, const PointCloud &lm_points, int itmax = 10);
-  BasicMesh deformWithPoints(const MatrixX3d &P, const PointCloud &lm_points, int itmax = 10);
+  BasicMesh deformWithMesh(const BasicMesh &T, const MatrixX3d &lm_points, int itmax = 10);
+  BasicMesh deformWithPoints(const MatrixX3d &P, const MatrixX3d &lm_points, int itmax = 10);
 
 protected:
   vector<ICPCorrespondence> findClosestPoints_tree(const MatrixX3d &P, const BasicMesh &mesh);

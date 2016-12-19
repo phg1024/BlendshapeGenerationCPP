@@ -39,13 +39,12 @@ void laplacianDeformation() {
   BasicMesh T;
   T.LoadOBJMesh(datapath + "Tester_1/TrainingPose/pose_" + to_string(objidx) + ".obj");
 
-  PointCloud lm_points;
-  lm_points.points.resize(landmarks.size(), 3);
+  MatrixX3d lm_points(landmarks.size(), 3);
   for(int i=0;i<landmarks.size();++i) {
     auto vi = T.vertex(landmarks[i]);
-    lm_points.points(i, 0) = vi[0];
-    lm_points.points(i, 1) = vi[1];
-    lm_points.points(i, 2) = vi[2];
+    lm_points(i, 0) = vi[0];
+    lm_points(i, 1) = vi[1];
+    lm_points(i, 2) = vi[2];
   }
   BasicMesh D = deformer.deformWithMesh(T, lm_points, 20);
 
@@ -76,8 +75,7 @@ void laplacianDeformation_pointcloud() {
     P.row(i) = points[i];
   }
 
-  PointCloud lm_points;
-  lm_points.points.resize(0, 0);
+  MatrixX3d lm_points(0, 0);
 
   BasicMesh m;
   m.LoadOBJMesh(datapath + "Tester_1/Blendshape/shape_0.obj");

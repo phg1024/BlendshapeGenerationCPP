@@ -26,13 +26,13 @@ MeshDeformer::MeshDeformer() {}
 
 MeshDeformer::~MeshDeformer() {}
 
-BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const PointCloud &lm_points, int itmax)
+BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const MatrixX3d &lm_points, int itmax)
 {
   MatrixX3d P = T.samplePoints(8, -0.1);
   return deformWithPoints(P, lm_points, itmax);
 }
 
-BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &lm_points, int itmax)
+BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const MatrixX3d &lm_points, int itmax)
 {
   //cout << "deformation with mesh ..." << endl;
   int nverts = S.NumVertices();
@@ -308,10 +308,10 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
   // main deformation loop
   int iters = 0;
 
-  double ratio_data2icp = max(0.1, 10.0*lm_points.points.nrow / (double) S.NumVertices());
+  double ratio_data2icp = max(0.1, 10.0*lm_points.rows() / (double) S.NumVertices());
   //cout << ratio_data2icp << endl;
   double w_icp = 0, w_icp_step = ratio_data2icp;
-  double w_data = 10.0*74.0/lm_points.points.nrow, w_data_step = w_data/itmax;
+  double w_data = 10.0*74.0/lm_points.rows(), w_data_step = w_data/itmax;
   double w_dist = 10000.0 * ratio_data2icp, w_dist_step = w_dist/itmax;
   double w_prior = 10.0, w_prior_step = w_prior*0.95/itmax;
 
@@ -494,9 +494,9 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
         /*
         // for debugging
         cout << "("
-             << lm_points.points(ioffset) << ","
-             << lm_points.points(ioffset+1) << ","
-             << lm_points.points(ioffset+2)
+             << lm_points(i, 0) << ","
+             << lm_points(i, 1) << ","
+             << lm_points(i, 2)
              << ")"
              << " vs "
              << "("
@@ -508,15 +508,16 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const PointCloud &l
         */
 
         M_coeffs.push_back(Tripletd(roffset, dstart, wi)); ++dstart;
-        b[roffset] = lm_points.points(ioffset) * wi;
+        b[roffset] = lm_points(i, 0) * wi;
         ++roffset; ++ioffset;
 
         M_coeffs.push_back(Tripletd(roffset, dstart, wi)); ++dstart;
-        b[roffset] = lm_points.points(ioffset) * wi;
+        b[roffset] = lm_points(i, 1) * wi;
         ++roffset; ++ioffset;
 
-        M_coeffs.push_back(Tripletd(roffset, dstart, wi));
-        b[roffset] = lm_points.points(ioffset) * wi;
+        const double weight_z = 0;
+        M_coeffs.push_back(Tripletd(roffset, dstart, wi * weight_z));
+        b[roffset] = lm_points(i, 2) * wi * weight_z;
         ++roffset; ++ioffset;
       }
       tland.toc("assembling landmarks term");

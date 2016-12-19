@@ -272,6 +272,7 @@ void BlendshapeRefiner::CreateTrainingShapes() {
   });
 
   S.resize(num_poses);
+  Slandmarks.resize(num_poses);
   #pragma omp parallel for
   for(int i=0;i<num_poses;++i) {
     ColorStream(ColorOutput::Green)<< "creating refined training shape " << i;
@@ -280,7 +281,15 @@ void BlendshapeRefiner::CreateTrainingShapes() {
     deformer.setValidFaces(valid_faces);
     deformer.setSource(S0[i]);
 
-    S[i] = deformer.deformWithPoints(point_clouds[i], PointCloud(), 20);
+    // Initialize the anchor vertices
+    auto& vindices_i = image_bundles[i].params.params_model.vindices;
+    Slandmarks[i] = MatrixX3d(vindices_i.size(), 3);
+    for(int j=0;j<vindices_i.size();++j) {
+      Slandmarks[i].row(j) = S0[i].vertex(vindices_i[j]);
+    }
+
+    deformer.setLandmarks(vindices_i);
+    S[i] = deformer.deformWithPoints(point_clouds[i], Slandmarks[i], 20);
     S[i].Write( InBlendshapesDirectory("S0_" + to_string(i) + ".obj") );
   }
   ColorStream(ColorOutput::Blue)<< "refined training shapes created.";
@@ -1114,8 +1123,9 @@ void BlendshapeRefiner::Refine() {
         return c[2] > -0.5;
       });
       deformer.setValidFaces(valid_faces);
+      deformer.setLandmarks(image_bundles[i].params.params_model.vindices);
 
-      S[i] = deformer.deformWithPoints(point_clouds[i], PointCloud(), 5);
+      S[i] = deformer.deformWithPoints(point_clouds[i], Slandmarks[i], 5);
       S[i].Write( InBlendshapesDirectory("S_refined_" + to_string(i) + ".obj") );
     }
 

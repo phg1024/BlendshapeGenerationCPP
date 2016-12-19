@@ -696,14 +696,15 @@ void blendShapeGeneration() {
       MeshDeformer deformer;
       deformer.setSource(S[i]);
       deformer.setLandmarks(landmarks);
-      PointCloud lm_points;
-      lm_points.points.resize(landmarks.size(), 3);
+
+      MatrixX3d lm_points(landmarks.size(), 3);
       for(int j=0;j<landmarks.size();++j) {
         auto vj = S0[i].vertex(landmarks[j]);
-        lm_points.points(j, 0) = vj[0];
-        lm_points.points(j, 1) = vj[1];
-        lm_points.points(j, 2) = vj[2];
+        lm_points(j, 0) = vj[0];
+        lm_points(j, 1) = vj[1];
+        lm_points(j, 2) = vj[2];
       }
+
       S[i] = deformer.deformWithPoints(P[i], lm_points, 5);
     }
 

@@ -5,6 +5,7 @@
 
 #include "ndarray.hpp"
 #include "triangle_gradient.h"
+#include "pointcloud.h"
 
 #include <MultilinearReconstruction/basicmesh.h>
 #include <MultilinearReconstruction/ioutilities.h>
@@ -116,6 +117,7 @@ private:
   vector<MatrixXd> point_clouds;
   vector<BasicMesh> S0;     // initial training shapes
   vector<BasicMesh> S;      // point cloud deformed training shapes
+  vector<MatrixX3d> Slandmarks;
 
   fs::path resources_path, reconstructions_path, point_clouds_path, input_blendshapes_path;
   fs::path blendshapes_path;
