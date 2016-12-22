@@ -749,7 +749,7 @@ void blendShapeGeneration_pointcloud(
   refiner.SetInputBlendshapesPath("/home/phg/Data/FaceWarehouse_Data_0/Tester_1/Blendshape/");
   refiner.SetBlendshapesPath(source_path + "/blendshapes");
 
-  refiner.LoadSelectionFile("selection.txt");
+  refiner.LoadSelectionFile("selection_sfs.txt");
   refiner.LoadInputReconstructionResults("settings.txt");
   refiner.LoadInputPointClouds();
 
@@ -781,7 +781,7 @@ void blendShapeGeneration_pointcloud_blendshapes(
   refiner.SetInputBlendshapesPath(input_blendshapes_path);
   refiner.SetBlendshapesPath(blendshapes_path);
 
-  refiner.LoadSelectionFile("selection.txt");
+  refiner.LoadSelectionFile("selection_sfs.txt");
   refiner.LoadInputReconstructionResults("settings.txt");
   refiner.LoadInputPointClouds();
 
