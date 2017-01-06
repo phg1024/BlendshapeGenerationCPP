@@ -35,6 +35,12 @@ void laplacianDeformation() {
   vector<int> landmarks = LoadIndices(datapath+"landmarks_74_new.txt");
   deformer.setLandmarks(landmarks);
 
+  vector<int> valid_faces = m.filterFaces([&m](Vector3i fi) {
+    Vector3d c = (m.vertex(fi[0]) + m.vertex(fi[1]) + m.vertex(fi[2]))/ 3.0;
+    return c[2] > -0.75;
+  });
+  deformer.setValidFaces(valid_faces);
+
   int objidx = 1;
   BasicMesh T;
   T.LoadOBJMesh(datapath + "Tester_1/TrainingPose/pose_" + to_string(objidx) + ".obj");
@@ -54,13 +60,17 @@ void laplacianDeformation() {
 void laplacianDeformation_pointcloud() {
   const string datapath("/home/phg/Data/FaceWarehouse_Data_0/");
   const string model_filename("/home/phg/Data/Multilinear/blendshape_core.tensor");
-  const string res_filename("/home/phg/Data/InternetRecon/yaoming/4.jpg.res");
-  const string pointcloud_filename("/home/phg/Data/InternetRecon/yaoming/SFS/point_cloud_opt_raw4.txt");
+  const string res_filename("/home/phg/Data/InternetRecon0/yaoming/4.jpg.res");
+  const string pointcloud_filename("/home/phg/Data/InternetRecon0/yaoming/SFS/masked_optimized_point_cloud_7.txt");
 
   // Update the mesh with the blendshape weights
   MultilinearModel model(model_filename);
   auto recon_results = LoadReconstructionResult(res_filename);
   model.ApplyWeights(recon_results.params_model.Wid, recon_results.params_model.Wexp);
+
+  glm::dmat4 R = glm::eulerAngleZ(-recon_results.params_model.R[2])
+               * glm::eulerAngleX(-recon_results.params_model.R[1])
+               * glm::eulerAngleY(-recon_results.params_model.R[0]);
 
   ifstream fin(pointcloud_filename);
   vector<Vector3d> points;
@@ -68,8 +78,13 @@ void laplacianDeformation_pointcloud() {
   while(fin) {
     double x, y, z;
     fin >> x >> y >> z;
-    points.push_back(Vector3d(x, y, z));
+
+    // rotate the input point cloud to regular view
+    glm::dvec4 pt0 =  R * glm::dvec4(x, y, z, 1.0);
+
+    points.push_back(Vector3d(pt0.x, pt0.y, pt0.z));
   }
+
   MatrixXd P(points.size(), 3);
   for(int i=0;i<points.size();++i) {
     P.row(i) = points[i];
@@ -93,6 +108,8 @@ void laplacianDeformation_pointcloud() {
       return c[2] > -0.5;
     });
     deformer.setValidFaces(valid_faces);
+    // No landmarks
+    deformer.setLandmarks(vector<int>());
 
     BasicMesh D = deformer.deformWithPoints(P, lm_points, 20);
     D.Write("deformed" + to_string(i) + ".obj");

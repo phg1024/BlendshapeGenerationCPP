@@ -52,7 +52,8 @@ endif()
 
 # Eigen
 find_package(Eigen)
-include_directories(${EIGEN_INCLUDE_DIR})
+include_directories(${EIGEN3_INCLUDE_DIRS})
+message("--   Eigen include path is ${EIGEN3_INCLUDE_DIRS}")
 
 # SuiteSparse
 set(SUITESPARSE_INCLUDE_DIR "/usr/include/suitesparse")

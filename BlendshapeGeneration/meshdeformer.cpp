@@ -317,7 +317,8 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const MatrixX3d &lm
 
   #define ANALYZE_ONCE 1  // analyze MtM only once
   bool analyzed = false;
-  CholmodSupernodalLLT<Eigen::SparseMatrix<double>> solver;
+  //CholmodSupernodalLLT<Eigen::SparseMatrix<double>> solver;
+  CholmodSupernodalLLT<SparseMatrixd> solver;
 
   while (iters++ < itmax) {
     cout << "iteration " << iters << endl;
@@ -652,10 +653,8 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const MatrixX3d &lm
 //    mfout << M << endl;
 //    mfout.close();
 
-
     PhGUtils::Timer tmatrix;
     tmatrix.tic();
-
     M.setFromTriplets(M_coeffs.begin(), M_coeffs.end());
 
     SparseMatrixd Mt = M.transpose();
@@ -664,7 +663,7 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const MatrixX3d &lm
     MtM += M_lapTM_lap * (w_dist * w_dist);
 
     // compute M' * b
-    //cout << "computing M'*b..." << endl;
+    cout << "computing M'*b..." << endl;
     VectorXd Mtb = Mt * b;
     tmatrix.toc("constructing linear equations");
 
@@ -677,7 +676,8 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const MatrixX3d &lm
     bool use_direct_solver = true;
     if(use_direct_solver) {
       cout << "Using direct solver..." << endl;
-      //cout << "Solving (M'*M)\(M'*b) ..." << endl;
+      cout << "Solving (M'*M)\\(M'*b) ..." << endl;
+      cout << MtM.rows() << 'x' << MtM.cols() << endl;
       // solve (M'*M)\(M'*b)
       // solution vector
       #if ANALYZE_ONCE
