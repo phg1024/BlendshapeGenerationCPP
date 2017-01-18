@@ -15,6 +15,18 @@ public:
   void loadMesh(const string& filename);
   void loadReferenceMesh(const string& filename);
 
+  double getError() const {
+    double avg_error = 0;
+    int cnt = 0;
+    for(auto x : dists) {
+      if(x >= 0) {
+        ++cnt;
+        avg_error += x;
+      }
+    }
+    return avg_error / cnt;
+  }
+
   int width() const { return canvasW; }
   int height() const { return canvasH; }
 
@@ -73,6 +85,7 @@ public:
     return QSize(600, 600);
   }
 
+  void setMesh(const BasicMesh& m);
   void loadMesh(const string &filename);
   void loadReferenceMesh(const string &filename);
 
@@ -118,10 +131,12 @@ public:
     if(silent) {
       ocanvas->loadMesh(mesh);
       ocanvas->loadReferenceMesh(refmesh);
+      avg_error = ocanvas->getError();
     } else {
       canvas->loadMesh(mesh);
       canvas->loadReferenceMesh(refmesh);
       canvas->repaint();
+      //avg_error = canvas->getError();
     }
   }
 
@@ -144,6 +159,12 @@ public:
     }
   }
 
+  void SaveError(const string& filename) {
+    ofstream fout(filename);
+    fout << avg_error << endl;
+    fout.close();
+  }
+
 private slots:
   void slot_loadMesh();
   void slot_loadReferenceMesh();
@@ -152,6 +173,7 @@ private:
   Ui::BlendshapeGenerationClass ui;
 
   bool silent;
+  double avg_error;
   BlendshapeVisualizer *canvas;
   OffscreenBlendshapeVisualizer *ocanvas;
 };

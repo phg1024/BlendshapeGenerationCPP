@@ -6,6 +6,7 @@ project(BlendshapeGeneration)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 # Instruct CMake to run moc automatically when needed.
 set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTOUIC ON)
 
 include(CheckCXXCompilerFlag)
 CHECK_CXX_COMPILER_FLAG("-std=c++11" COMPILER_SUPPORTS_CXX11)
@@ -86,6 +87,9 @@ link_libraries(${CERES_LIBRARIES})
 # Face shape from shading program
 add_executable(BlendshapeGeneration main.cpp
                blendshapegeneration.cpp
+               interactiverigging.cpp
+               blendshapesweightswidget.cpp
+               blendshapesweightswidget.h
                meshdeformer.cpp
                meshtransferer.cpp
                pointcloud.cpp blendshaperefiner.cpp blendshaperefiner.h)

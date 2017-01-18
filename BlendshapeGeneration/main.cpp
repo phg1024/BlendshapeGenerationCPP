@@ -1,6 +1,7 @@
 #include "common.h"
 
 #include "blendshapegeneration.h"
+#include "interactiverigging.h"
 #include <QtWidgets/QApplication>
 
 #include "testcases.h"
@@ -345,9 +346,11 @@ pair<VectorXd, BasicMesh> estimateNeutralFace(const BasicMesh& target) {
   VectorXd wid = tm1_mat.transpose().jacobiSvd(ComputeThinU | ComputeThinV).solve(target_verts);
 
   // perturb a little
+  #if 1
   double wid_0 = wid(0);
-  wid = StatsUtils::perturb(wid, 0.1);
+  wid = StatsUtils::perturb(wid, 0.005);
   wid(0) = wid_0;
+  #endif
 
   VectorXd verts = (wid.transpose() * tm1_mat).transpose();
   BasicMesh res = target;
@@ -365,8 +368,8 @@ void blendShapeGeneration() {
   // load the meshes
   string datapath = "/home/phg/Data/FaceWarehouse_Data_0/";
   string A_path = datapath + "Tester_1/Blendshape/";
-  string B_path = datapath + "Tester_106/Blendshape/";
-  string S_path = datapath + "Tester_106/TrainingPose/";
+  string B_path = datapath + "Tester_53/Blendshape/";
+  string S_path = datapath + "Tester_53/TrainingPose/";
 
   const int nshapes = 46; // 46 in total (1..46)
   const int nposes = 19; // 20 in total (0..19)
@@ -377,7 +380,7 @@ void blendShapeGeneration() {
   vector<BasicMesh> S0(nposes);             // ground truth training meshes
 
   // load the landmarks
-  vector<int> landmarks = LoadIndices(datapath+"landmarks_74_new.txt");
+  vector<int> landmarks = LoadIndices("/home/phg/Data/Multilinear/landmarks_73.txt");
 
   // load the template blendshapes and ground truth blendshapes
   for(int i=0;i<=nshapes;++i) {
@@ -393,91 +396,15 @@ void blendShapeGeneration() {
   auto& A0 = A[0];
   auto& B0 = B[0];
 
+  vector<int> valid_faces = B0.filterFaces([&B0](Vector3i fi) {
+    Vector3d c = (B0.vertex(fi[0]) + B0.vertex(fi[1]) + B0.vertex(fi[2]))/ 3.0;
+    return c[2] > -0.75;
+  });
+
   // load the training poses
   for(int i=0;i<nposes;++i){
     S0[i].LoadOBJMesh(S_path + "pose_" + to_string(i) + ".obj");
   }
-
-  const bool synthesizeTrainingPoses = true;
-  vector<Array1D<double>> alpha_ref(nposes);
-  if( synthesizeTrainingPoses ) {
-    // estimate the blendshape weights from the input training poses, then use
-    // the estimated weights to generate a new set of training poses
-
-    // compute the delta shapes of the renference shapes
-    vector<MatrixX3d> dB_ref(nshapes);
-    for(int i=0;i<nshapes;++i) {
-      dB_ref[i] = B_ref[i+1].vertices() - B_ref[0].vertices();
-    }
-
-    // estimate the weights of the training poses using the ground truth blendshapes
-    for(int i=0;i<nposes;++i) {
-      alpha_ref[i] = estimateWeights(S0[i], B_ref[0], dB_ref,
-                                     Array1D<double>::ones(nshapes) * 0.25,
-                                     Array1D<double>::zeros(nshapes),
-                                     0.0, 5);
-      cout << alpha_ref[i] << endl;
-    }
-
-    // use the reference weights to build a set of training poses
-    // this set is used as ground truth set
-    vector<BasicMesh> Sgen(nposes);
-    for(int i=0;i<nposes;++i) {
-      // make a copy of B0
-      auto Ti = B_ref[0];
-      for(int j=0;j<nshapes;++j) {
-        Ti.vertices() += alpha_ref[i](j) * dB_ref[j];
-      }
-      Ti.Write("Sgen_"+to_string(i)+".obj");
-      //Ti = alignMesh(Ti, S0{i});
-      //S_error(iters, i) = sqrt(max(sum((Ti.vertices-S0{i}.vertices).^2, 2)));
-
-      // update the reconstructed mesh
-      Sgen[i] = Ti;
-    }
-    S0 = Sgen;
-    cout << "input training set generated." << endl;
-  }
-  else {
-    // fill alpha_ref with zeros
-    for(int i=0;i<nposes;++i) alpha_ref[i] = Array1D<double>::random(nshapes);
-  }
-
-  // create point clouds from Sgen
-  vector<MatrixX3d> P(nposes);
-  for(int i=0;i<nposes;++i) {
-    P[i] = S0[i].samplePoints(4, -0.10);
-    //P[i].Write("P_" + to_string(i) + ".txt");
-  }
-
-#if 0
-  vector<BasicMesh> S(nposes);  // meshes reconstructed from point clouds
-  // use Laplacian deformation to reconstruct a set of meshes from the sampled
-  // point clouds
-  MeshDeformer deformer;
-  deformer.setSource(B0);
-  deformer.setLandmarks(landmarks);
-  for(int i=0;i<nposes;++i) {
-    PointCloud lm_points;
-
-    lm_points.points.resize(landmarks.size(), 3);
-    for(int j=0;j<landmarks.size();++j) {
-      auto vj = S0[i].vertex(landmarks[j]);
-      lm_points.points(j, 0) = vj[0];
-      lm_points.points(j, 1) = vj[1];
-      lm_points.points(j, 2) = vj[2];
-    }
-
-    S[i] = deformer.deformWithPoints(P[i], lm_points, 5);
-    S[i].Write("Sinit_" + to_string(i) + ".obj");
-  }
-  auto S_init = S;
-  cout << "initial fitted meshes computed." << endl;
-#else
-  // Just use the synthesized shapes as ground truth
-  vector<BasicMesh> S = S0;
-  auto S_init = S;
-#endif
 
   // find the stationary set of verteces
   vector<int> stationary_indices = B0.filterVertices([=](const Vector3d& v) {
@@ -499,6 +426,90 @@ void blendShapeGeneration() {
   }
   auto B_init = B;
   ColorStream(ColorOutput::Blue)<< "initial set of blendshapes created.";
+
+  const bool synthesizeTrainingPoses = true;
+  vector<Array1D<double>> alpha_ref(nposes);
+  if( synthesizeTrainingPoses ) {
+    // estimate the blendshape weights from the input training poses, then use
+    // the estimated weights to generate a new set of training poses
+
+    // compute the delta shapes of the renference shapes
+    vector<MatrixX3d> dB_ref(nshapes);
+    for(int i=0;i<nshapes;++i) {
+      dB_ref[i] = B_ref[i+1].vertices() - B_ref[0].vertices();
+    }
+
+    // estimate the weights of the training poses using the ground truth blendshapes
+    // and ground truth training shapes
+    for(int i=0;i<nposes;++i) {
+      alpha_ref[i] = estimateWeights(S0[i], B_ref[0], dB_ref,
+                                     Array1D<double>::ones(nshapes) * 0.25,
+                                     Array1D<double>::zeros(nshapes),
+                                     0.0, 5);
+      cout << alpha_ref[i] << endl;
+    }
+
+    // use the reference weights to build an initial fitted set of training shapes
+    vector<BasicMesh> Sgen(nposes);
+    for(int i=0;i<nposes;++i) {
+      // make a copy of B0
+      auto Ti = B_ref[0];
+      for(int j=0;j<nshapes;++j) {
+        Ti.vertices() += alpha_ref[i](j) * (B[j+1].vertices() - B[0].vertices());
+      }
+      Ti.Write("Sgen_"+to_string(i)+".obj");
+      //Ti = alignMesh(Ti, S0{i});
+      //S_error(iters, i) = sqrt(max(sum((Ti.vertices-S0{i}.vertices).^2, 2)));
+
+      // update the reconstructed mesh
+      Sgen[i] = Ti;
+    }
+    // Sgen are initially fitted meshes using the
+    //S0 = Sgen;
+    cout << "input training set generated." << endl;
+  }
+  else {
+    // fill alpha_ref with zeros
+    for(int i=0;i<nposes;++i) alpha_ref[i] = Array1D<double>::random(nshapes);
+  }
+
+  // create point clouds from Sgen
+  vector<MatrixX3d> P(nposes);
+  for(int i=0;i<nposes;++i) {
+    P[i] = S0[i].samplePoints(4, -0.10);
+    //P[i].Write("P_" + to_string(i) + ".txt");
+  }
+
+#if 1
+  vector<BasicMesh> S(nposes);  // meshes reconstructed from point clouds
+  // use Laplacian deformation to reconstruct a set of meshes from the sampled
+  // point clouds
+  MeshDeformer deformer;
+  deformer.setSource(B0);
+  deformer.setLandmarks(landmarks);
+  deformer.setValidFaces(valid_faces);
+
+  for(int i=0;i<nposes;++i) {
+    MatrixX3d lm_points(landmarks.size(), 3);
+
+    for(int j=0;j<landmarks.size();++j) {
+      auto vj = S0[i].vertex(landmarks[j]);
+      lm_points(j, 0) = vj[0];
+      lm_points(j, 1) = vj[1];
+      lm_points(j, 2) = vj[2];
+    }
+
+    S[i] = deformer.deformWithPoints(P[i], lm_points, 5);
+    S[i].Write("Sinit_" + to_string(i) + ".obj");
+  }
+  auto S_init = S;
+  cout << "initial fitted meshes computed." << endl;
+#else
+  // Just use the input shapes as ground truth
+  vector<BasicMesh> S = S0;
+  // Use the generated shapes as initial reconstructions
+  auto S_init = Sgen;
+#endif
 
   // XXX Need to refer to the blendshape refiner and change the code below to a
   // full optimization of the entire set of blendshapes
@@ -689,6 +700,10 @@ void blendShapeGeneration() {
     }
     //fprintf('Emax = %.6f\tEmean = %.6f\n', max(S_error(iters,:)), mean(S_error(iters,:)));
 
+    if(converged || (iters == maxIters - 1)) {
+      // No need to deform the shapes again
+      break;
+    }
 
     // The reconstructed mesh are updated using the new set of blendshape
     // weights, need to use laplacian deformation to refine them again
@@ -696,6 +711,7 @@ void blendShapeGeneration() {
       MeshDeformer deformer;
       deformer.setSource(S[i]);
       deformer.setLandmarks(landmarks);
+      deformer.setValidFaces(valid_faces);
 
       MatrixX3d lm_points(landmarks.size(), 3);
       for(int j=0;j<landmarks.size();++j) {
@@ -818,6 +834,7 @@ int main(int argc, char *argv[])
     ("pointclouds", "Generate blendshapes from point clouds")
     ("pointclouds_with_init_shapes", "Generate blendshapes from point clouds and a set of initial blendshapes")
     ("ebfr", "Generate blendshapes using example based facial rigging method")
+    ("rigging", "Interactive rigging mode with specified blendshapes")
     ("repo_path", po::value<string>(), "Path to images repo.")
     ("recon_path", po::value<string>(), "Path to large scale reconstruction results")
     ("pointclouds_path", po::value<string>(), "Path to input point clouds")
@@ -841,11 +858,16 @@ int main(int argc, char *argv[])
     }
 
     if(vm.count("oldfasion")) {
-      throw runtime_error("This is no longer supported.");
       blendShapeGeneration();
     } else if(vm.count("ebfr")) {
       throw runtime_error("This is no longer supported.");
       blendShapeGeneration_pointcloud_EBFR();
+    } else if (vm.count("rigging")) {
+      QApplication a(argc, argv);
+      InteractiveRigging rigging;
+      rigging.LoadBlendshapes(vm["blendshapes_path"].as<string>());
+      rigging.show();
+      return a.exec();
     } else if (vm.count("pointclouds")) {
       if(vm.count("repo_path")) {
         blendShapeGeneration_pointcloud(vm["repo_path"].as<string>(),
@@ -903,6 +925,8 @@ int main(int argc, char *argv[])
 
         w.Save(vm["save"].as<string>());
         qApp->processEvents();
+
+        if(compare_mode) w.SaveError(vm["save"].as<string>() + ".error");
         return 0;
       } else {
         return a.exec();

@@ -82,11 +82,11 @@ void OffscreenBlendshapeVisualizer::computeDistance() {
     auto normal = mesh.vertex_normal(i);
 
     if(normal.dot(normal0) < 0) {
-      dists[i] = -1;
+      dists[i] = -dists[i];
     } else {
       double dx = px - qx, dy = py - qy, dz = pz - qz;
       dists[i] = sqrt(dx*dx+dy*dy+dz*dz);
-      if(dists[i] > 0.1) dists[i] = -1;
+      if(dists[i] > 0.1) dists[i] = -dists[i];
     }
   }
 }
@@ -470,13 +470,19 @@ BlendshapeVisualizer::BlendshapeVisualizer(QWidget *parent):
   GL3DCanvas(parent)
 {
   setSceneScale(1.5);
-  setProjectionMode(GL3DCanvas::ORTHONGONAL);
+  setCameraPos(0, 0, 10);
+  //setProjectionMode(GL3DCanvas::ORTHONGONAL);
   mouseInteractionMode = GL3DCanvas::VIEW_TRANSFORM;
 }
 
 BlendshapeVisualizer::~BlendshapeVisualizer()
 {
 
+}
+
+void BlendshapeVisualizer::setMesh(const BasicMesh& m) {
+  mesh = m;
+  GL3DCanvas::repaint();
 }
 
 void BlendshapeVisualizer::loadMesh(const string &filename)
@@ -500,6 +506,9 @@ void BlendshapeVisualizer::paintGL()
   GL3DCanvas::paintGL();
 
   glEnable(GL_DEPTH_TEST);
+
+  glEnable(GL_CULL_FACE);
+  glCullFace(GL_BACK);
 
   enableLighting();
   if( mesh.NumFaces() > 0 ) {

@@ -25,7 +25,7 @@
 #include "boost/filesystem/path.hpp"
 #include <boost/timer/timer.hpp>
 
-void expressionTransfer(const string& res_filename) {
+void expressionTransfer(const string& res_filename, const string& blendshapes_path) {
   // Load the reconstruction results
   auto recon_results = LoadReconstructionResult(res_filename);
 
@@ -34,7 +34,7 @@ void expressionTransfer(const string& res_filename) {
   vector<BasicMesh> B(nshapes+1);
   #pragma omp parallel for
   for(int i=0;i<=nshapes;++i) {
-    B[i] = BasicMesh("B_" + std::to_string(i) + ".obj");
+    B[i] = BasicMesh(blendshapes_path + "/B_" + std::to_string(i) + ".obj");
   }
 
   // Create the transferred shape
@@ -110,9 +110,11 @@ void create_mesh(const string& filename) {
   mesh0.UpdateVertices(model.GetTM());
   mesh0.ComputeNormals();
 
-  glm::dmat4 Rmat = glm::eulerAngleYXZ(recon_results.params_model.R[0],
-                                       recon_results.params_model.R[1],
-                                       recon_results.params_model.R[2]);
+  cout << recon_results.params_model.R << endl;
+
+  glm::dmat4 Rmat = glm::eulerAngleYXZ(-recon_results.params_model.R[0],
+                                       -recon_results.params_model.R[1],
+                                       -recon_results.params_model.R[2]);
   Rmat = glm::transpose(Rmat);
   for(int i=0;i<mesh0.NumVertices();++i) {
     auto v = mesh0.vertex(i);
@@ -133,7 +135,7 @@ int main(int argc, char** argv) {
     create_mesh(argv[2]);
     return 0;
   } else {
-    expressionTransfer(argv[1]);
+    expressionTransfer(argv[1], argv[2]);
     return app.exec();
   }
 }

@@ -19,6 +19,8 @@ typedef CGAL::AABB_triangle_primitive<K, Iterator> Primitive;
 typedef CGAL::AABB_traits<K, Primitive> AABB_triangle_traits;
 typedef CGAL::AABB_tree<AABB_triangle_traits> Tree;
 
+#include "unsupported/Eigen/SparseExtra"
+
 using Eigen::CholmodSupernodalLLT;
 using Eigen::Success;
 
@@ -678,6 +680,15 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const MatrixX3d &lm
       cout << "Using direct solver..." << endl;
       cout << "Solving (M'*M)\\(M'*b) ..." << endl;
       cout << MtM.rows() << 'x' << MtM.cols() << endl;
+      cout << MtM.nonZeros() << endl;
+
+/*
+      {
+        Eigen::saveMarket(MtM, "MtM.mtx");
+        cout << "done" << endl;
+        exit(0);
+      }
+*/
       // solve (M'*M)\(M'*b)
       // solution vector
       #if ANALYZE_ONCE
