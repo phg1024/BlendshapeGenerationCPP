@@ -749,12 +749,15 @@ void blendShapeGeneration() {
 
 void blendShapeGeneration_pointcloud(
   const string& source_path,
-  bool subdivision) {
+  bool subdivision,
+  bool disable_neutral_opt,
+  bool mask_nose_and_fore_head) {
   BlendshapeRefiner refiner(
     json{
         {"use_init_blendshapes", false},
         {"subdivision", subdivision},
-        {"blendshapes_subdivided", false}
+        {"blendshapes_subdivided", false},
+        {"mask_nose_and_fore_head", mask_nose_and_fore_head}
       });
   refiner.SetBlendshapeCount(46);
   refiner.LoadTemplateMeshes("/home/phg/Data/FaceWarehouse_Data_0/Tester_1/Blendshape/", "shape_");
@@ -769,7 +772,7 @@ void blendShapeGeneration_pointcloud(
   refiner.LoadInputReconstructionResults("settings.txt");
   refiner.LoadInputPointClouds();
 
-  refiner.Refine();
+  refiner.Refine(false, disable_neutral_opt);
 }
 
 void blendShapeGeneration_pointcloud_blendshapes(
@@ -779,13 +782,17 @@ void blendShapeGeneration_pointcloud_blendshapes(
   const string& input_blendshapes_path,
   const string& blendshapes_path,
   bool subdivision,
-  bool blendshapes_subdivided
+  bool blendshapes_subdivided,
+  bool initialize_only,
+  bool disable_neutral_opt,
+  bool mask_nose_and_fore_head
 ) {
   BlendshapeRefiner refiner(
     json{
       {"use_init_blendshapes", true},
       {"subdivision", subdivision},
-      {"blendshapes_subdivided", blendshapes_subdivided}
+      {"blendshapes_subdivided", blendshapes_subdivided},
+      {"mask_nose_and_fore_head", mask_nose_and_fore_head}
     }
   );
   refiner.SetBlendshapeCount(46);
@@ -801,7 +808,7 @@ void blendShapeGeneration_pointcloud_blendshapes(
   refiner.LoadInputReconstructionResults("settings.txt");
   refiner.LoadInputPointClouds();
 
-  refiner.Refine();
+  refiner.Refine(initialize_only, disable_neutral_opt);
 }
 
 void blendShapeGeneration_pointcloud_EBFR() {
@@ -824,7 +831,9 @@ void blendShapeGeneration_pointcloud_EBFR() {
 
 int main(int argc, char *argv[])
 {
+  QApplication a(argc, argv);
   google::InitGoogleLogging(argv[0]);
+  glutInit(&argc, argv);
 
   namespace po = boost::program_options;
   po::options_description desc("Options");
@@ -840,11 +849,15 @@ int main(int argc, char *argv[])
     ("pointclouds_path", po::value<string>(), "Path to input point clouds")
     ("init_blendshapes_path", po::value<string>(), "Path to initial blendshapes")
     ("blendshapes_path", po::value<string>(), "Path to output blendshapes")
+    ("initialize_only", "Only perform initialization")
+    ("no_neutral", "Disable neutral shape optimzation")
     ("subdivided", "Indicate the input blendshapes are subdivided")
     ("subdivision", "Enable subdivision")
+    ("mask_nose_and_fore_head", "Use fore head and nose mask")
     ("ref_mesh", po::value<string>(), "Reference mesh for distance computation")
     ("mesh", po::value<string>(), "Mesh to visualize")
     ("vis", "Visualize blendshape mesh")
+    ("sideview", "Visualize the blendshape mesh in side view")
     ("silent", "Silent visualization using offscreen drawing")
     ("save,s", po::value<string>(), "Save the result to a file");
   po::variables_map vm;
@@ -852,6 +865,7 @@ int main(int argc, char *argv[])
   try {
     po::store(po::parse_command_line(argc, argv, desc), vm);
     po::notify(vm);
+
     if(vm.count("help")) {
       cout << desc << endl;
       return 1;
@@ -871,7 +885,9 @@ int main(int argc, char *argv[])
     } else if (vm.count("pointclouds")) {
       if(vm.count("repo_path")) {
         blendShapeGeneration_pointcloud(vm["repo_path"].as<string>(),
-                                        vm.count("subdivision"));
+                                        vm.count("subdivision"),
+                                        vm.count("no_neutral"),
+                                        vm.count("mask_nose_and_fore_head"));
       } else {
         throw po::error("Need to specify repo_path");
       }
@@ -888,7 +904,10 @@ int main(int argc, char *argv[])
           vm["init_blendshapes_path"].as<string>(),
           vm["blendshapes_path"].as<string>(),
           vm.count("subdivision"),
-          vm.count("subdivided")
+          vm.count("subdivided"),
+          vm.count("initialize_only"),
+          vm.count("no_neutral"),
+          vm.count("mask_nose_and_fore_head")
         );
       } else {
         throw po::error("Need to specify repo_path, recon_path, pointclouds_path, init_blendshapes_path, blendshapes_path");
@@ -896,6 +915,7 @@ int main(int argc, char *argv[])
     } else if(vm.count("vis")) {
       bool save_result = vm.count("save");
       bool compare_mode = vm.count("ref_mesh");
+      bool sideview = vm.count("sideview");
 
       string input_mesh_file;
       if(vm.count("mesh")) {
@@ -904,9 +924,9 @@ int main(int argc, char *argv[])
         throw po::error("Need to specify mesh");
       }
 
-      QApplication a(argc, argv);
       BlendshapeGeneration w(vm.count("silent"));
       if(!vm.count("silent")) w.show();
+      w.SetSideView(sideview);
 
       if(compare_mode) {
         string ref_mesh_file = vm["ref_mesh"].as<string>();

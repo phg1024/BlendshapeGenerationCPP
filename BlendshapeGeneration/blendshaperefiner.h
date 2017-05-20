@@ -48,7 +48,8 @@ public:
   void LoadInputReconstructionResults(const string& settings_filename);
   void LoadInputPointClouds();
 
-  void Refine();
+  void Refine(bool initialize_only=false,
+              bool disable_neutral_opt=false);
   void Refine_EBFR();
 
 private:
@@ -113,6 +114,8 @@ private:
   bool use_init_blendshapes;
   bool do_subdivision;
   bool blendshapes_subdivided;
+  bool mask_nose_and_fore_head;
+
   vector<ImageBundle> image_bundles;
   vector<MatrixXd> point_clouds;
   vector<BasicMesh> S0;     // initial training shapes
@@ -123,6 +126,10 @@ private:
   fs::path blendshapes_path;
   vector<int> selection_indices;
   map<int, int> selection_to_order_map;
+
+  unordered_set<int> hair_region_indices,
+                     nose_forehead_indices,
+                     extended_hair_region_indices;
 
   Reporter reporter;
 };

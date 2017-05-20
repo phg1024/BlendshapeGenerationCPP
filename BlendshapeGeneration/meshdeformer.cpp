@@ -1,6 +1,8 @@
-#include <MultilinearReconstruction/utils.hpp>
-
 #include "meshdeformer.h"
+
+#include <MultilinearReconstruction/utils.hpp>
+#include <MultilinearReconstruction/OffscreenMeshVisualizer.h>
+
 #include "Geometry/geometryutils.hpp"
 #include "triangle_gradient.h"
 
@@ -329,6 +331,7 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const MatrixX3d &lm
     PhGUtils::Timer tcorr;
     tcorr.tic();
     //vector<ICPCorrespondence> icp_corr = findClosestPoints_bruteforce(P, D);
+    //vector<ICPCorrespondence> icp_corr = findClosestPoints_projection(P, D);
     vector<ICPCorrespondence> icp_corr = findClosestPoints_tree(P, D);
     tcorr.toc("finding correspondence");
 
@@ -753,14 +756,110 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const MatrixX3d &lm
   return D;
 }
 
+vector<ICPCorrespondence> MeshDeformer::findClosestPoints_projection(const MatrixX3d &P, const BasicMesh &mesh) {
+  const int nfaces = mesh.NumFaces();
+  const int npoints = P.rows();
+
+  // Render the mesh in triangle mode
+  const int tex_size = 512;
+  OffscreenMeshVisualizer visualizer(tex_size, tex_size);
+  visualizer.BindMesh(mesh);
+  visualizer.SetFacesToRender(valid_faces);
+  visualizer.SetRenderMode(OffscreenMeshVisualizer::Mesh);
+  visualizer.SetIndexEncoded(true);
+  visualizer.SetMVPMode(OffscreenMeshVisualizer::OrthoNormalExtended);
+  QImage img = visualizer.Render();
+
+  visualizer.SetRenderMode(OffscreenMeshVisualizer::BarycentricCoordinates);
+  QImage timg = visualizer.Render();
+
+  //cout << "Rendered." << endl;
+  //img.save("mesh_projected.png");
+  //timg.save("mesh_projected_bcoords.png");
+
+  vector<ICPCorrespondence> corrs(npoints);
+
+  // Draw the points to an image with the same size
+  //QImage pimg(tex_size, tex_size, QImage::Format_RGB32);
+  //pimg.fill(Qt::black);
+
+  for(int pidx=0;pidx<P.rows();++pidx) {
+    double x = P(pidx, 0), y = P(pidx, 1), z = P(pidx, 2);
+    ICPCorrespondence bestCorr;
+
+    if(x <= -1 || x >= 1 || y <= -1 || y >= 1) {
+      bestCorr.tidx = 0;
+      bestCorr.weight = 0;
+    } else {
+      int px = (1 + x) * 0.5 * tex_size;
+      int py = (1 - y) * 0.5 * tex_size;
+
+      QRgb pix = img.pixel(px, py);
+      unsigned char r = qRed(pix), g = qGreen(pix), b = qBlue(pix);
+
+      // get triangle index
+      int tidx;
+      ColorEncoding::decode_index(r, g, b, tidx);
+
+      bestCorr.d = numeric_limits<double>::max();
+      bestCorr.tidx = tidx;
+
+      auto face_t = mesh.face(bestCorr.tidx);
+      int v0idx = face_t[0], v1idx = face_t[1], v2idx = face_t[2];
+
+      auto v0 = mesh.vertex(v0idx);
+      auto v1 = mesh.vertex(v1idx);
+      auto v2 = mesh.vertex(v2idx);
+
+      QRgb tpix = timg.pixel(px, py);
+      float alpha = qRed(tpix) / 255.0f, beta = qGreen(tpix) / 255.0f, gamma = qBlue(tpix) / 255.0f;
+
+      bestCorr.bcoords[0] = alpha;
+      bestCorr.bcoords[1] = beta;
+      bestCorr.bcoords[2] = gamma;
+
+      auto hitpoint = alpha * v0 + beta * v1 + gamma * v2;
+      bestCorr.hit[0] = hitpoint[0];
+      bestCorr.hit[1] = hitpoint[1];
+      bestCorr.hit[2] = hitpoint[2];
+
+      double dx = bestCorr.hit[0] - x, dy = bestCorr.hit[1] - y, dz = bestCorr.hit[2] - z;
+      bestCorr.d = dx*dx+dy*dy+dz*dz;
+      //cout << bestCorr.d << endl;
+
+      // compute face normal
+      PhGUtils::Vector3d p0(v0[0], v0[1], v0[2]),
+                         p1(v1[0], v1[1], v1[2]),
+                         p2(v2[0], v2[1], v2[2]);
+      PhGUtils::Vector3d normal(p1-p0, p2-p0);
+      PhGUtils::Vector3d dvec(dx, dy, dz);
+      double scaler = 1-1/(1+exp(-(250*((bestCorr.d<0?bestCorr.d:sqrt(bestCorr.d))-0.025))));
+      bestCorr.weight = fabs(normal.normalized().dot(dvec.normalized())) * scaler;
+
+      //pimg.setPixel(px, py, qRgb(255*scaler, 0, 255*(1-scaler)));
+    }
+
+    corrs[pidx] = bestCorr;
+  }
+
+  //pimg.save("points_projected.png");
+  //exit(0);
+
+  return corrs;
+}
+
 vector<ICPCorrespondence> MeshDeformer::findClosestPoints_tree(const MatrixX3d &P, const BasicMesh &mesh) {
   int nfaces = mesh.NumFaces();
   int npoints = P.rows();
 
+  PhGUtils::Timer t_buildtree, t_treesearch, t_bary;
+
+  t_buildtree.tic();
   vector<int> face_indices_map;
   std::vector<Triangle> triangles;
   triangles.reserve(nfaces);
   if(valid_faces.empty()) {
+    cout << "Using all faces ..." << endl;
     face_indices_map.resize(nfaces);
     for(int i=0,ioffset=0;i<nfaces;++i) {
       face_indices_map[i] = i;
@@ -791,11 +890,12 @@ vector<ICPCorrespondence> MeshDeformer::findClosestPoints_tree(const MatrixX3d &
 
   Tree tree(triangles.begin(), triangles.end());
   tree.accelerate_distance_queries();
+  t_buildtree.toc();
 
   vector<ICPCorrespondence> corrs(npoints);
 
   // query the tree for closest point
-#pragma omp parallel for
+  //#pragma omp parallel for
   for (int pidx = 0; pidx < npoints; ++pidx) {
     int poffset = pidx * 3;
     double px = P(pidx, 0), py = P(pidx, 1), pz = P(pidx, 2);
@@ -803,11 +903,14 @@ vector<ICPCorrespondence> MeshDeformer::findClosestPoints_tree(const MatrixX3d &
 #undef max
     ICPCorrespondence bestCorr;
     bestCorr.d = numeric_limits<double>::max();
+    t_treesearch.tic();
     Tree::Point_and_primitive_id bestHit = tree.closest_point_and_primitive(Point(px, py, pz));
+    t_treesearch.toc();
+
     bestCorr.tidx = face_indices_map[bestHit.second - triangles.begin()];
     bestCorr.hit[0] = bestHit.first.x(); bestCorr.hit[1] = bestHit.first.y(); bestCorr.hit[2] = bestHit.first.z();
     double dx = px - bestHit.first.x(), dy = py - bestHit.first.y(), dz = pz - bestHit.first.z();
-    bestCorr.d = dx*dx+dy+dy+dz*dz;
+    bestCorr.d = dx*dx+dy*dy+dz*dz;
 
     // compute bary-centric coordinates
     int toffset = bestCorr.tidx * 3;
@@ -819,11 +922,13 @@ vector<ICPCorrespondence> MeshDeformer::findClosestPoints_tree(const MatrixX3d &
     auto v2 = mesh.vertex(v2idx);
 
     PhGUtils::Point3f bcoords;
+    t_bary.tic();
     PhGUtils::computeBarycentricCoordinates(PhGUtils::Point3f(px, py, pz),
                                             PhGUtils::Point3f(v0[0], v0[1], v0[2]),
                                             PhGUtils::Point3f(v1[0], v1[1], v1[2]),
                                             PhGUtils::Point3f(v2[0], v2[1], v2[2]),
                                             bcoords);
+    t_bary.toc();
     bestCorr.bcoords[0] = bcoords.x; bestCorr.bcoords[1] = bcoords.y; bestCorr.bcoords[2] = bcoords.z;
 
     // compute face normal
@@ -836,6 +941,11 @@ vector<ICPCorrespondence> MeshDeformer::findClosestPoints_tree(const MatrixX3d &
 
     corrs[pidx] = bestCorr;
   }
+
+  t_buildtree.report("building search tree");
+  t_treesearch.report("searching in tree");
+  t_bary.report("computing barycentric coordinates");
+
   return corrs;
 }
 

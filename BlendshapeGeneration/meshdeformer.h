@@ -1,7 +1,7 @@
 #pragma once
 #include "common.h"
 #include <MultilinearReconstruction/basicmesh.h>
-#include "pointcloud.h"
+//#include "pointcloud.h"
 
 struct ICPCorrespondence {
   int tidx;             // triangle index
@@ -140,6 +140,7 @@ public:
   BasicMesh deformWithPoints(const MatrixX3d &P, const MatrixX3d &lm_points, int itmax = 10);
 
 protected:
+  vector<ICPCorrespondence> findClosestPoints_projection(const MatrixX3d &P, const BasicMesh &mesh);
   vector<ICPCorrespondence> findClosestPoints_tree(const MatrixX3d &P, const BasicMesh &mesh);
   vector<ICPCorrespondence> findClosestPoints_bruteforce(const MatrixX3d &P, const BasicMesh &mesh);
   ICPCorrespondence findClosestPoint_triangle(double px, double py, double pz,

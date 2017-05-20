@@ -17,10 +17,12 @@ BlendshapeRefiner::BlendshapeRefiner(json settings) {
     use_init_blendshapes = settings["use_init_blendshapes"];
     do_subdivision = settings["subdivision"];
     blendshapes_subdivided = settings["blendshapes_subdivided"];
+    mask_nose_and_fore_head = settings["mask_nose_and_fore_head"];
   } else {
     use_init_blendshapes = false;
     do_subdivision = false;
     blendshapes_subdivided = false;
+    mask_nose_and_fore_head = false;
   }
 
   reporter = Reporter("Blendshape Refiner");
@@ -34,6 +36,25 @@ BlendshapeRefiner::BlendshapeRefiner(json settings) {
                      "/home/phg/Data/Multilinear/blendshape_u_1_aug.tensor");
 
     template_mesh = BasicMesh("/home/phg/Data/Multilinear/template.obj");
+
+    {
+      // Load indices
+      auto load_indices = [](const string& indices_filename) {
+        auto indices_quad = LoadIndices(indices_filename);
+        // @HACK each quad face is triangulated, so the indices change from i to [2*i, 2*i+1]
+        unordered_set<int> indices;
+        for(auto fidx : indices_quad) {
+          indices.insert(fidx*2);
+          indices.insert(fidx*2+1);
+        }
+
+        return indices;
+      };
+
+      hair_region_indices = load_indices("/home/phg/Data/Multilinear/hair_region_indices.txt");
+      nose_forehead_indices = load_indices("/home/phg/Data/Multilinear/nose_and_forehead_indices.txt");
+      extended_hair_region_indices = load_indices("/home/phg/Data/Multilinear/extended_hair_region_indices.txt");
+    }
 
     reporter.Toc();
   }
@@ -612,7 +633,7 @@ vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> 
 
     #pragma omp parallel for
       for(int j=0;j<nfaces;++j) {
-        // skip if the face is stationary
+        // skip if the face is stationary or it's in the hair region
         if (stationary_faces_set[j]) {
           M[j] = MatrixXd(nshapes + 1, 9);
           for(int k=0;k<9;++k) M[j](0, k) = B00grads[0].rowptr(j)[k];
@@ -622,13 +643,19 @@ vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> 
           continue;
         }
 
+        bool is_face_masked = (hair_region_indices.count(j)
+                           || nose_forehead_indices.count(j)
+                           || extended_hair_region_indices.count(j))
+                           && mask_nose_and_fore_head;
+        const double w_data_mask = (is_face_masked?0.0001:1.0);
+
         // b_data
         VectorXd b_data(nrows_data);
         for(int i=0;i<nposes;++i) {
           auto Sgrad_ij = Sgrad[i][j];
           for(int k=0;k<9;++k) b_data(i*9+k) = Sgrad_ij(k);
         }
-        b_data *= w_data;
+        b_data *= w_data * w_data_mask;
 
         VectorXd A_dataTb_data = A_data_T * b_data;
 
@@ -687,7 +714,12 @@ vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> 
         Asim_coeffs.reserve(estimated_Asim_usage);
         VectorXd b_sim;
         if(refine_neutral_only) {
-          w_sim = 0.01;
+          // Mask certain region to further constrain the deformation
+          bool masked = (hair_region_indices.count(j)
+                     || nose_forehead_indices.count(j)
+                     || extended_hair_region_indices.count(j))
+                     && mask_nose_and_fore_head;
+          w_sim = 0.0001 * (masked?10000:1);
           nrows_sim = 9;
           ncols_sim = 9 * (nshapes + 1);
 
@@ -748,7 +780,7 @@ vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> 
         Eigen::SparseMatrix<double> AtA = (A.transpose() * A).pruned();
 
         // Add back A_dataTA_data, which is computed outside
-        AtA += A_dataTA_data;
+        AtA += A_dataTA_data * w_data_mask;
 
         const double epsilon = 0.0;//1e-9;
         Eigen::SparseMatrix<double> eye(ncols_total, ncols_total);
@@ -852,7 +884,7 @@ vector<BasicMesh> BlendshapeRefiner::RefineBlendshapes(const vector <BasicMesh> 
   return B_new;
 }
 
-void BlendshapeRefiner::Refine() {
+void BlendshapeRefiner::Refine(bool initialize_only, bool disable_neutral_opt) {
   // [Step 0]: load initial blendshapes if possible
   if(use_init_blendshapes) LoadInitialBlendshapes();
 
@@ -867,6 +899,9 @@ void BlendshapeRefiner::Refine() {
 
   // [Step 2]: create a set of initial blendshapes using initial neutral face mesh and template blendshapes
   InitializeBlendshapes();
+
+  // HACK for generating point clouds fittings
+  if(initialize_only) return;
 
   // HACK subdivide A and S if use_init_blendshapes
   if(blendshapes_subdivided) {
@@ -897,7 +932,7 @@ void BlendshapeRefiner::Refine() {
   auto& A0 = A[0];
   int num_faces = A0.NumFaces();
 
-  auto ComputerPrior = [](const vector<BasicMesh>& A) {
+  auto ComputerPrior = [=](const vector<BasicMesh>& A) {
     ColorStream(ColorOutput::Blue) << "Computing prior ...";
     auto& A0 = A[0];
     int num_faces = A0.NumFaces();
@@ -907,6 +942,26 @@ void BlendshapeRefiner::Refine() {
     vector<PhGUtils::Matrix3x3d> MA0(num_faces);
     for(int j=0;j<num_faces;++j) {
       MA0[j] = triangleGradient(A0, j);
+    }
+
+    // Compute per-face prior weight using the mask
+    // apply strong weights to these region
+    vector<double> w_mask(num_faces, 1);
+    if(mask_nose_and_fore_head) {
+      for(auto fidx : hair_region_indices) {
+        //cout << fidx << endl;
+        w_mask[fidx] = 10000.0;
+      }
+      for(auto fidx : extended_hair_region_indices) {
+        //cout << fidx << endl;
+        w_mask[fidx] = 10000.0;
+      }
+      for(auto fidx : nose_forehead_indices) {
+        //cout << fidx << endl;
+        w_mask[fidx] = 5000.0;
+      }
+    } else {
+      cout << "Not masking nose and fore head region." << endl;
     }
 
     vector<vector<PhGUtils::Matrix3x3d>> prior(num_shapes, vector<PhGUtils::Matrix3x3d>(num_faces));
@@ -919,7 +974,7 @@ void BlendshapeRefiner::Refine() {
         auto GA0Ai = MAij * (MA0[j].inv());
         prior[i][j] = GA0Ai;
         double MAij_norm = (MAij-MA0[j]).norm();
-        w_prior(i, j) = (1+MAij_norm)/pow(kappa+MAij_norm, 2.0);
+        w_prior(i, j) = (1+MAij_norm)/pow(kappa+MAij_norm, 2.0) * w_mask[j];
       }
     }
 
@@ -1015,7 +1070,9 @@ void BlendshapeRefiner::Refine() {
     double eta = eta_max + iters/maxIters*(eta_min-eta_max);
 
     // Refine the neutral shape only
-    auto B_new = RefineBlendshapes(S, Sgrad, A, B, B00, alpha, beta, gamma, prior, w_prior, stationary_indices, stationary_faces_set);
+    vector<BasicMesh> B_new;
+    if(disable_neutral_opt) B_new = B;
+    else B_new = RefineBlendshapes(S, Sgrad, A, B, B00, alpha, beta, gamma, prior, w_prior, stationary_indices, stationary_faces_set);
 
     // Refine all blendshapes
     B_new = RefineBlendshapes(S, Sgrad, A, B_new, B_new[0], alpha, beta, gamma, prior, w_prior, stationary_indices, stationary_faces_set, false);
@@ -1072,6 +1129,23 @@ void BlendshapeRefiner::Refine() {
     // Optional: subdivide all meshes
     if(do_subdivision){
       reporter.Tic("Subdivision");
+
+      // HACK: each valid face i becomes [4i, 4i+1, 4i+2, 4i+3] after the each
+      // Update both hair_region_indices and nose_forehead_indices
+      auto update_indices = [](const unordered_set<int>& in_indices) {
+        vector<int> indices_new;
+        for(auto fidx : in_indices) {
+          int fidx_base = fidx*4;
+          indices_new.push_back(fidx_base);
+          indices_new.push_back(fidx_base+1);
+          indices_new.push_back(fidx_base+2);
+          indices_new.push_back(fidx_base+2);
+        }
+        return unordered_set<int>(indices_new.begin(), indices_new.end());
+      };
+      hair_region_indices = update_indices(hair_region_indices);
+      nose_forehead_indices = update_indices(nose_forehead_indices);
+      extended_hair_region_indices = update_indices(extended_hair_region_indices);
 
       ColorStream(ColorOutput::Blue) << "Subdividing the meshes...";
       // Subdivide every mesh

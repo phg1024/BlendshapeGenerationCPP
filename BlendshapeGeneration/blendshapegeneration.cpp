@@ -24,10 +24,26 @@ typedef CGAL::AABB_tree<AABB_triangle_traits> Tree;
 #include <boost/timer/timer.hpp>
 
 OffscreenBlendshapeVisualizer::OffscreenBlendshapeVisualizer(int w, int h)
-  : canvasW(w), canvasH(h) {
-  sceneScale = 1.5;
-  cameraPos = QVector3D(0, 0, sceneScale * 2);
-  projectionMode = ORTHONGONAL;
+  : use_side_view(false), canvasW(w), canvasH(h) {
+  // Load and Parse rendering settings
+  {
+    std::ifstream fin("/home/phg/Data/Settings/blendshape_vis.json");
+    fin >> rendering_settings;
+    //cout << rendering_settings << endl;
+  }
+
+  // Basic setup
+  sceneScale = rendering_settings["scene_scale"];
+  cameraPos = QVector3D(
+    rendering_settings["campos"][0],
+    rendering_settings["campos"][1],
+    rendering_settings["campos"][2]);
+
+  if(string(rendering_settings["mode"]) == "perspective") {
+    projectionMode = PERSPECTIVE;
+  } else {
+    projectionMode = ORTHONGONAL;
+  }
 }
 OffscreenBlendshapeVisualizer::~OffscreenBlendshapeVisualizer() {}
 
@@ -44,49 +60,58 @@ void OffscreenBlendshapeVisualizer::loadReferenceMesh(const string& filename) {
 }
 
 void OffscreenBlendshapeVisualizer::computeDistance() {
+  boost::timer::auto_cpu_timer t("Distance computation time = %w seconds.\n");
   if( refmesh.NumFaces() <= 0 ) return;
 
   int nfaces = refmesh.NumFaces();
 
   std::vector<Triangle> triangles;
   triangles.reserve(nfaces);
-  for(int i=0,ioffset=0;i<nfaces;++i) {
-    auto face_i = refmesh.face(i);
-    int v1 = face_i[0], v2 = face_i[1], v3 = face_i[2];
-    auto p1 = refmesh.vertex(v1), p2 = refmesh.vertex(v2), p3 = refmesh.vertex(v3);
-    Point a(p1[0], p1[1], p1[2]);
-    Point b(p2[0], p2[1], p2[2]);
-    Point c(p3[0], p3[1], p3[2]);
 
-    triangles.push_back(Triangle(a, b, c));
+  {
+    boost::timer::auto_cpu_timer t("[compute distance] data preparation time = %w seconds.\n");
+    for(int i=0,ioffset=0;i<nfaces;++i) {
+      auto face_i = refmesh.face(i);
+      int v1 = face_i[0], v2 = face_i[1], v3 = face_i[2];
+      auto p1 = refmesh.vertex(v1), p2 = refmesh.vertex(v2), p3 = refmesh.vertex(v3);
+      Point a(p1[0], p1[1], p1[2]);
+      Point b(p2[0], p2[1], p2[2]);
+      Point c(p3[0], p3[1], p3[2]);
+
+      triangles.push_back(Triangle(a, b, c));
+    }
   }
 
   Tree tree(triangles.begin(), triangles.end());
   tree.accelerate_distance_queries();
 
   dists.resize(mesh.NumVertices());
-  for(int i=0;i<mesh.NumVertices();++i) {
-    auto point_i = mesh.vertex(i);
-    double px = point_i[0],
-           py = point_i[1],
-           pz = point_i[2];
-    Tree::Point_and_primitive_id bestHit = tree.closest_point_and_primitive(Point(px, py, pz));
-    double qx = bestHit.first.x(),
-           qy = bestHit.first.y(),
-           qz = bestHit.first.z();
+  {
+    boost::timer::auto_cpu_timer t("[compute distance] closest point search time = %w seconds.\n");
+    #pragma omp parallel for
+    for(int i=0;i<mesh.NumVertices();++i) {
+      auto point_i = mesh.vertex(i);
+      double px = point_i[0],
+             py = point_i[1],
+             pz = point_i[2];
+      Tree::Point_and_primitive_id bestHit = tree.closest_point_and_primitive(Point(px, py, pz));
+      double qx = bestHit.first.x(),
+             qy = bestHit.first.y(),
+             qz = bestHit.first.z();
 
-    auto ref_face = *bestHit.second;
-    auto ref_normal = CGAL::normal(ref_face[0], ref_face[1],  ref_face[2]);
-    Vector3d normal0(ref_normal.x(), ref_normal.y(), ref_normal.z());
+      auto ref_face = *bestHit.second;
+      auto ref_normal = CGAL::normal(ref_face[0], ref_face[1],  ref_face[2]);
+      Vector3d normal0(ref_normal.x(), ref_normal.y(), ref_normal.z());
 
-    auto normal = mesh.vertex_normal(i);
+      auto normal = mesh.vertex_normal(i);
 
-    if(normal.dot(normal0) < 0) {
-      dists[i] = -dists[i];
-    } else {
-      double dx = px - qx, dy = py - qy, dz = pz - qz;
-      dists[i] = sqrt(dx*dx+dy*dy+dz*dz);
-      if(dists[i] > 0.1) dists[i] = -dists[i];
+      if(normal.dot(normal0) < 0) {
+        dists[i] = -dists[i];
+      } else {
+        double dx = px - qx, dy = py - qy, dz = pz - qz;
+        dists[i] = sqrt(dx*dx+dy*dy+dz*dz);
+        if(dists[i] > 0.1) dists[i] = -dists[i];
+      }
     }
   }
 }
@@ -107,12 +132,12 @@ void OffscreenBlendshapeVisualizer::setupViewing() {
 		}
 	case FRUSTUM:
 		{
-			glFrustum(-1.0, 1.0, -1.0, 1.0, 1.0, 1.0);
+			glFrustum(-1.0, 1.0, -1.0, 1.0, 1.0, 2.0);
 			break;
 		}
 	case PERSPECTIVE:
 		{
-			gluPerspective(60.0, (float)width()/(float)height(), 0.0001f, sceneScale * 10.0);
+			gluPerspective(25.0, (float)width()/(float)height(), 0.01f, sceneScale * 10.0);
 			break;
 		}
 	default:
@@ -169,6 +194,11 @@ void OffscreenBlendshapeVisualizer::paint()
   glEnable(GL_DEPTH_TEST);
 
   enableLighting();
+  if(use_side_view) {
+    glPushMatrix();
+    glRotatef(-90, 0, 1, 0);
+  }
+
   if( mesh.NumFaces() > 0 ) {
     if( refmesh.NumFaces() > 0 ) drawMeshWithColor(mesh);
     else drawMesh(mesh);
@@ -178,6 +208,11 @@ void OffscreenBlendshapeVisualizer::paint()
     glDepthFunc(GL_ALWAYS);
     drawMeshVerticesWithColor(mesh);
   }
+
+  if(use_side_view) {
+    glPopMatrix();
+  }
+
   disableLighting();
 
   if( !dists.empty() ) {
@@ -234,37 +269,85 @@ void OffscreenBlendshapeVisualizer::paint()
 
 void OffscreenBlendshapeVisualizer::enableLighting()
 {
-  GLfloat light_position[] = {10.0, 4.0, 10.0,1.0};
-  GLfloat mat_specular[] = {0.5, 0.5, 0.5, 1.0};
-  GLfloat mat_diffuse[] = {0.375, 0.375, 0.375, 1.0};
-  GLfloat mat_shininess[] = {25.0};
-  GLfloat light_ambient[] = {0.05, 0.05, 0.05, 1.0};
-  GLfloat white_light[] = {1.0, 1.0, 1.0, 1.0};
+  enabled_lights.clear();
 
-  //glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, mat_specular);
+  // Setup material
+  auto& mat_specular_json = rendering_settings["material"]["specular"];
+  GLfloat mat_specular[] = {
+    mat_specular_json[0],
+    mat_specular_json[1],
+    mat_specular_json[2],
+    mat_specular_json[3]
+  };
+
+  auto& mat_diffuse_json = rendering_settings["material"]["diffuse"];
+  GLfloat mat_diffuse[] = {
+    mat_diffuse_json[0],
+    mat_diffuse_json[1],
+    mat_diffuse_json[2],
+    mat_diffuse_json[3]
+  };
+
+  auto& mat_shininess_json = rendering_settings["material"]["shininess"];
+  GLfloat mat_shininess[] = {mat_shininess_json};
+
+  glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, mat_specular);
   glMaterialfv(GL_FRONT_AND_BACK, GL_SHININESS, mat_shininess);
   glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, mat_diffuse);
 
-  glLightfv(GL_LIGHT0, GL_POSITION, light_position);
-  glLightfv(GL_LIGHT0, GL_DIFFUSE, white_light);
-  //glLightfv(GL_LIGHT0, GL_SPECULAR, white_light);
-  glLightfv(GL_LIGHT0, GL_AMBIENT, light_ambient);
+  // Setup Lights
+  auto setup_light = [&](json light_json) {
+    auto light_i = GL_LIGHT0 + enabled_lights.size();
 
-  light_position[0] = -10.0;
-  glLightfv(GL_LIGHT1, GL_POSITION, light_position);
-  glLightfv(GL_LIGHT1, GL_DIFFUSE, white_light);
-  //glLightfv(GL_LIGHT1, GL_SPECULAR, white_light);
-  glLightfv(GL_LIGHT1, GL_AMBIENT, light_ambient);
+    GLfloat light_position[] = {
+      light_json["pos"][0],
+      light_json["pos"][1],
+      light_json["pos"][2],
+      light_json["pos"][3]
+    };
+    GLfloat light_ambient[] = {
+      light_json["ambient"][0],
+      light_json["ambient"][1],
+      light_json["ambient"][2],
+      light_json["ambient"][3]
+    };
+    GLfloat light_diffuse[] = {
+      light_json["diffuse"][0],
+      light_json["diffuse"][1],
+      light_json["diffuse"][2],
+      light_json["diffuse"][3]
+    };
+    GLfloat light_specular[] = {
+      light_json["specular"][0],
+      light_json["specular"][1],
+      light_json["specular"][2],
+      light_json["specular"][3]
+    };
+
+    glLightfv(light_i, GL_POSITION, light_position);
+    glLightfv(light_i, GL_DIFFUSE, light_diffuse);
+    glLightfv(light_i, GL_SPECULAR, light_specular);
+    glLightfv(light_i, GL_AMBIENT, light_ambient);
+
+    enabled_lights.push_back(light_i);
+  };
+
+  for(json::iterator it = rendering_settings["lights"].begin();
+      it != rendering_settings["lights"].end();
+      ++it)
+  {
+    setup_light(*it);
+  }
 
   glEnable(GL_LIGHTING);
-  glEnable(GL_LIGHT0);
-  glEnable(GL_LIGHT1);
+  for(auto light_i : enabled_lights) glEnable(light_i);
 }
 
 void OffscreenBlendshapeVisualizer::disableLighting()
 {
-  glDisable(GL_LIGHT0);
-  glDisable(GL_LIGHT1);
+  for(auto light_i : enabled_lights) glDisable(light_i);
+  enabled_lights.clear();
+
   glDisable(GL_LIGHTING);
 }
 
@@ -469,6 +552,7 @@ void OffscreenBlendshapeVisualizer::drawMeshVerticesWithColor(const BasicMesh &m
 BlendshapeVisualizer::BlendshapeVisualizer(QWidget *parent):
   GL3DCanvas(parent)
 {
+  use_side_view = false;
   setSceneScale(1.5);
   setCameraPos(0, 0, 10);
   //setProjectionMode(GL3DCanvas::ORTHONGONAL);
@@ -629,6 +713,7 @@ void BlendshapeVisualizer::disableLighting()
 // TODO Add a method to compute and visualize point set to surface distance
 void BlendshapeVisualizer::computeDistance()
 {
+  boost::timer::auto_cpu_timer t("distance computation time = %w seconds.\n");
   if( refmesh.NumFaces() <= 0 ) return;
 
   int nfaces = refmesh.NumFaces();
@@ -650,6 +735,7 @@ void BlendshapeVisualizer::computeDistance()
   tree.accelerate_distance_queries();
 
   dists.resize(mesh.NumVertices());
+  #pragma omp parallel for
   for(int i=0;i<mesh.NumVertices();++i) {
     auto point_i = mesh.vertex(i);
     double px = point_i[0],

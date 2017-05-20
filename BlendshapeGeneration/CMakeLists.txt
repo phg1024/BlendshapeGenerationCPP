@@ -84,14 +84,44 @@ find_package(Ceres REQUIRED)
 include_directories(${CERES_INCLUDE_DIRS})
 link_libraries(${CERES_LIBRARIES})
 
+add_library(meshdeformer meshdeformer.cpp)
+target_link_libraries(meshdeformer
+  Qt5::Core
+  Qt5::Widgets
+  Qt5::OpenGL
+  CGAL
+  ${MKLLIBS}
+  ${OPENCV_LIBS}
+  ${PhGLib}
+  basicmesh
+  ioutilities
+  multilinearmodel
+  reporter
+  offscreenmeshvisualizer
+)
+
+add_library(meshtransferer meshtransferer.cpp)
+target_link_libraries(meshtransferer
+  Qt5::Core
+  Qt5::Widgets
+  Qt5::OpenGL
+  CGAL
+  ${MKLLIBS}
+  ${OPENCV_LIBS}
+  ${PhGLib}
+  basicmesh
+  ioutilities
+  multilinearmodel
+  reporter
+  offscreenmeshvisualizer
+)
+
 # Face shape from shading program
 add_executable(BlendshapeGeneration main.cpp
                blendshapegeneration.cpp
                interactiverigging.cpp
                blendshapesweightswidget.cpp
                blendshapesweightswidget.h
-               meshdeformer.cpp
-               meshtransferer.cpp
                pointcloud.cpp blendshaperefiner.cpp blendshaperefiner.h)
 
 target_link_libraries(BlendshapeGeneration
@@ -105,9 +135,11 @@ target_link_libraries(BlendshapeGeneration
                       basicmesh
                       ioutilities
                       multilinearmodel
-                      reporter)
+                      reporter
+                      meshdeformer
+                      meshtransferer)
 
-add_executable(laplaciandeformation laplaciandeformation.cpp meshdeformer.cpp pointcloud.cpp)
+add_executable(laplaciandeformation laplaciandeformation.cpp)
 target_link_libraries(laplaciandeformation
                       Qt5::Core
                       Qt5::Widgets
@@ -117,9 +149,10 @@ target_link_libraries(laplaciandeformation
                       ${PhGLib}
                       basicmesh
                       ioutilities
-                      multilinearmodel)
+                      multilinearmodel
+                      meshdeformer)
 
-add_executable(deformationtransfer deformationtransfer.cpp meshtransferer.cpp pointcloud.cpp)
+add_executable(deformationtransfer deformationtransfer.cpp)
 target_link_libraries(deformationtransfer
                       Qt5::Core
                       Qt5::Widgets
@@ -129,9 +162,10 @@ target_link_libraries(deformationtransfer
                       ${PhGLib}
                       basicmesh
                       ioutilities
-                      multilinearmodel)
+                      multilinearmodel
+                      meshtransferer)
 
-add_executable(expressiontransfer expressiontransfer.cpp MultilinearReconstruction/OffscreenMeshVisualizer.cpp MultilinearReconstruction/meshvisualizer.cpp)
+add_executable(expressiontransfer expressiontransfer.cpp)
 target_link_libraries(expressiontransfer
                       Qt5::Core
                       Qt5::Widgets
@@ -141,7 +175,27 @@ target_link_libraries(expressiontransfer
                       ${PhGLib}
                       basicmesh
                       ioutilities
-                      multilinearmodel)
+                      multilinearmodel
+                      meshdeformer
+                      meshtransferer
+                      offscreenmeshvisualizer
+                      meshvisualizer)
+
+add_executable(meshfitter meshfitter.cpp)
+target_link_libraries(meshfitter
+                      Qt5::Core
+                      Qt5::Widgets
+                      Qt5::OpenGL
+                      CGAL
+                      ${MKLLIBS}
+                      ${PhGLib}
+                      basicmesh
+                      ioutilities
+                      multilinearmodel
+                      meshdeformer
+                      meshtransferer
+                      offscreenmeshvisualizer
+                      meshvisualizer)
 
 link_directories(MultilinearReconstruction)
 

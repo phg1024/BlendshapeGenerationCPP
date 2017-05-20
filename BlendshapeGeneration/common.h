@@ -47,4 +47,4 @@ using namespace std;
 #include <eigen3/Eigen/LU>
 #include <Eigen/Sparse>
 #include <Eigen/CholmodSupport>
-using namespace Eigen;
+//using namespace Eigen;

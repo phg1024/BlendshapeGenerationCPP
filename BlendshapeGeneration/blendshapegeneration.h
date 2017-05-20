@@ -7,11 +7,17 @@
 #include "OpenGL/gl3dcanvas.h"
 #include <MultilinearReconstruction/basicmesh.h>
 
+#include "json/src/json.hpp"
+using json = nlohmann::json;
+
 class OffscreenBlendshapeVisualizer {
 public:
   OffscreenBlendshapeVisualizer(int w, int h);
   ~OffscreenBlendshapeVisualizer();
 
+  void SetSideView(bool val) {
+    use_side_view = val;
+  }
   void loadMesh(const string& filename);
   void loadReferenceMesh(const string& filename);
 
@@ -55,6 +61,7 @@ protected:
   void drawColorBar(double, double);
 
 private:
+  bool use_side_view;
   vector<double> dists;
   BasicMesh mesh;
   BasicMesh refmesh;
@@ -69,6 +76,9 @@ private:
     PERSPECTIVE
   } projectionMode;
   QImage rendered_img;
+
+  json rendering_settings;
+  vector<GLuint> enabled_lights;
 };
 
 class BlendshapeVisualizer : public GL3DCanvas {
@@ -85,6 +95,9 @@ public:
     return QSize(600, 600);
   }
 
+  void SetSideView(bool val) {
+    use_side_view = val;
+  }
   void setMesh(const BasicMesh& m);
   void loadMesh(const string &filename);
   void loadReferenceMesh(const string &filename);
@@ -110,6 +123,7 @@ protected:
   void drawColorBar(double, double);
 
 private:
+  bool use_side_view;
   vector<double> dists;
   BasicMesh mesh;
   BasicMesh refmesh;
@@ -125,6 +139,14 @@ public:
 
   virtual QSize sizeHint() const {
     return QSize(600, 600);
+  }
+
+  void SetSideView(bool val) {
+    if(silent) {
+      ocanvas->SetSideView(val);
+    } else {
+      canvas->SetSideView(val);
+    }
   }
 
   void LoadMeshes(const string& mesh, const string& refmesh) {
