@@ -6,6 +6,7 @@
 
 #include "OpenGL/gl3dcanvas.h"
 #include <MultilinearReconstruction/basicmesh.h>
+#include <MultilinearReconstruction/ioutilities.h>
 
 #include "json/src/json.hpp"
 using json = nlohmann::json;
@@ -15,11 +16,41 @@ public:
   OffscreenBlendshapeVisualizer(int w, int h);
   ~OffscreenBlendshapeVisualizer();
 
+  void setRenderingSettings(json settings) {
+    rendering_settings = settings;
+    SetBasicRenderingParams();
+  }
+
   void SetSideView(bool val) {
     use_side_view = val;
   }
+
+  void SetSkipFaces(const vector<int>& skip_faces_in, bool subdivided=false) {
+    vector<int> faces_to_skip;
+    for(auto i : skip_faces_in) {
+      faces_to_skip.push_back(2*i);
+      faces_to_skip.push_back(2*i+1);
+    }
+    if(subdivided) {
+      //cout << "subdivided" << endl;
+      for(auto i : faces_to_skip) {
+        skip_faces.insert(4*i);
+        skip_faces.insert(4*i+1);
+        skip_faces.insert(4*i+2);
+        skip_faces.insert(4*i+3);
+      }
+    } else {
+      skip_faces = set<int>(faces_to_skip.begin(), faces_to_skip.end());
+    }
+  }
+
   void loadMesh(const string& filename);
   void loadReferenceMesh(const string& filename);
+
+  void setTexture(const QImage& img) {
+    texture = img;
+    has_texture = true;
+  }
 
   double getError() const {
     double avg_error = 0;
@@ -50,6 +81,7 @@ public:
   }
 
 protected:
+  void SetBasicRenderingParams();
   void setupViewing();
   void paint();
   void enableLighting();
@@ -66,6 +98,8 @@ private:
   BasicMesh mesh;
   BasicMesh refmesh;
 
+  set<int> skip_faces;
+
   double sceneScale;
   QVector3D cameraPos;
 
@@ -76,6 +110,9 @@ private:
     PERSPECTIVE
   } projectionMode;
   QImage rendered_img;
+
+  bool has_texture;
+  QImage texture;
 
   json rendering_settings;
   vector<GLuint> enabled_lights;
@@ -149,6 +186,23 @@ public:
     }
   }
 
+  void SetTexture(const string& filename) {
+    texture = QImage(filename.c_str());
+    if(silent) {
+      ocanvas->setTexture(texture);
+    }
+  }
+
+  void LoadRenderingSettings(const string& filename) {
+    json settings;
+    ifstream fin(filename);
+    fin >> settings;
+
+    if(silent) {
+      ocanvas->setRenderingSettings(settings);
+    }
+  }
+
   void LoadMeshes(const string& mesh, const string& refmesh) {
     if(silent) {
       ocanvas->loadMesh(mesh);
@@ -168,6 +222,13 @@ public:
     } else {
       canvas->loadMesh(mesh);
       canvas->repaint();
+    }
+  }
+
+  void LoadSkipFaces(const string& filename, bool subdivided) {
+    auto indices = LoadIndices(filename);
+    if(silent) {
+      ocanvas->SetSkipFaces(indices, subdivided);
     }
   }
 
@@ -198,6 +259,8 @@ private:
   double avg_error;
   BlendshapeVisualizer *canvas;
   OffscreenBlendshapeVisualizer *ocanvas;
+
+  QImage texture;
 };
 
 #endif // BLENDSHAPEGENERATION_H

@@ -24,7 +24,7 @@ typedef CGAL::AABB_tree<AABB_triangle_traits> Tree;
 #include <boost/timer/timer.hpp>
 
 OffscreenBlendshapeVisualizer::OffscreenBlendshapeVisualizer(int w, int h)
-  : use_side_view(false), canvasW(w), canvasH(h) {
+  : use_side_view(false), canvasW(w), canvasH(h), has_texture(false) {
   // Load and Parse rendering settings
   {
     std::ifstream fin("/home/phg/Data/Settings/blendshape_vis.json");
@@ -32,6 +32,11 @@ OffscreenBlendshapeVisualizer::OffscreenBlendshapeVisualizer(int w, int h)
     //cout << rendering_settings << endl;
   }
 
+  SetBasicRenderingParams();
+}
+OffscreenBlendshapeVisualizer::~OffscreenBlendshapeVisualizer() {}
+
+void OffscreenBlendshapeVisualizer::SetBasicRenderingParams() {
   // Basic setup
   sceneScale = rendering_settings["scene_scale"];
   cameraPos = QVector3D(
@@ -45,7 +50,6 @@ OffscreenBlendshapeVisualizer::OffscreenBlendshapeVisualizer(int w, int h)
     projectionMode = ORTHONGONAL;
   }
 }
-OffscreenBlendshapeVisualizer::~OffscreenBlendshapeVisualizer() {}
 
 void OffscreenBlendshapeVisualizer::loadMesh(const string& filename) {
   mesh.LoadOBJMesh(filename);
@@ -408,9 +412,35 @@ void OffscreenBlendshapeVisualizer::drawColorBar(double minVal, double maxVal) {
 
 void OffscreenBlendshapeVisualizer::drawMesh(const BasicMesh &m)
 {
-  glColor4f(0.75, 0.75, 0.75, 1.0);
+  glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+
+  GLuint image_tex;
+  if(has_texture) {
+    cout << "Using texture ..." << endl;
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
+
+    glEnable(GL_TEXTURE);
+    glEnable(GL_TEXTURE_2D);
+
+    glGenTextures(1, &image_tex);
+    cout << image_tex << endl;
+    cout << texture.width() << 'x' << texture.height() << endl;
+    glBindTexture(GL_TEXTURE_2D, image_tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texture.width(), texture.height(), 0, GL_BGRA,
+                 GL_UNSIGNED_BYTE, texture.bits());
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+  }
+
+  // HACK disable this for rendering textured blendshapes
+  glDisable(GL_CULL_FACE);
+
   glBegin(GL_TRIANGLES);
   for(int i=0;i<m.NumFaces();++i) {
+    if(skip_faces.count(i)) continue;
+    
     auto face_i = m.face(i);
     int v1 = face_i[0], v2 = face_i[1], v3 = face_i[2];
 
@@ -419,20 +449,32 @@ void OffscreenBlendshapeVisualizer::drawMesh(const BasicMesh &m)
     //glNormal3d(norm_i[0], norm_i[1], norm_i[2]);
 
     auto p1 = m.vertex(v1), p2 = m.vertex(v2), p3 = m.vertex(v3);
+    auto tf = mesh.face_texture(i);
 
+    auto t0 = mesh.texture_coords(tf[0]);
     auto n1 = m.vertex_normal(v1);
+    glTexCoord2f(t0[0], 1-t0[1]);
     glNormal3d(n1[0], n1[1], n1[2]);
     glVertex3d(p1[0], p1[1], p1[2]);
 
+    auto t1 = mesh.texture_coords(tf[1]);
     auto n2 = m.vertex_normal(v2);
+    glTexCoord2f(t1[0], 1-t1[1]);
     glNormal3d(n2[0], n2[1], n2[2]);
     glVertex3d(p2[0], p2[1], p2[2]);
 
+    auto t2 = mesh.texture_coords(tf[2]);
     auto n3 = m.vertex_normal(v3);
+    glTexCoord2f(t2[0], 1-t2[1]);
     glNormal3d(n3[0], n3[1], n3[2]);
     glVertex3d(p3[0], p3[1], p3[2]);
   }
   glEnd();
+
+  if(has_texture) {
+    glDisable(GL_TEXTURE_2D);
+    glDisable(GL_TEXTURE);
+  }
 }
 
 void OffscreenBlendshapeVisualizer::drawMeshWithColor(const BasicMesh &m)

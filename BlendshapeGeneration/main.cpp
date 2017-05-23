@@ -857,6 +857,9 @@ int main(int argc, char *argv[])
     ("ref_mesh", po::value<string>(), "Reference mesh for distance computation")
     ("mesh", po::value<string>(), "Mesh to visualize")
     ("vis", "Visualize blendshape mesh")
+    ("rendering_settings", po::value<string>(), "Rendering settings to use")
+    ("skip_faces", po::value<string>(), "Faces to skip rendering")
+    ("texture", po::value<string>(), "Texture for the mesh")
     ("sideview", "Visualize the blendshape mesh in side view")
     ("silent", "Silent visualization using offscreen drawing")
     ("save,s", po::value<string>(), "Save the result to a file");
@@ -927,6 +930,10 @@ int main(int argc, char *argv[])
       BlendshapeGeneration w(vm.count("silent"));
       if(!vm.count("silent")) w.show();
       w.SetSideView(sideview);
+
+      if(vm.count("texture")) w.SetTexture(vm["texture"].as<string>());
+      if(vm.count("rendering_settings")) w.LoadRenderingSettings(vm["rendering_settings"].as<string>());
+      if(vm.count("skip_faces")) w.LoadSkipFaces(vm["skip_faces"].as<string>(), vm.count("subdivided"));
 
       if(compare_mode) {
         string ref_mesh_file = vm["ref_mesh"].as<string>();

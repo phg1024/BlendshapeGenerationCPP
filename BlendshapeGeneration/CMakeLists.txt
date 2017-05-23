@@ -197,6 +197,22 @@ target_link_libraries(meshfitter
                       offscreenmeshvisualizer
                       meshvisualizer)
 
+add_executable(blendshapes_driver blendshapes_driver.cpp)
+target_link_libraries(blendshapes_driver
+                      Qt5::Core
+                      Qt5::Widgets
+                      Qt5::OpenGL
+                      CGAL
+                      ${MKLLIBS}
+                      ${PhGLib}
+                      basicmesh
+                      ioutilities
+                      multilinearmodel
+                      meshdeformer
+                      meshtransferer
+                      offscreenmeshvisualizer
+                      meshvisualizer)
+
 link_directories(MultilinearReconstruction)
 
 add_subdirectory(MultilinearReconstruction)
