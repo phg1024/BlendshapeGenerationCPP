@@ -4,6 +4,8 @@
 #include <MultilinearReconstruction/OffscreenMeshVisualizer.h>
 
 #include "Geometry/geometryutils.hpp"
+
+#include "cereswrapper.h"
 #include "triangle_gradient.h"
 
 #include <CGAL/Simple_cartesian.h>
@@ -230,6 +232,18 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const MatrixX3d &lm
   nterms += ndistortion;
   //nrows += S.NumVertices() * 3;
   nrows += valid_vertices.size() * 3;
+
+  // add rigidity term
+  int nrigidity = 0;
+  for (int i=0;i<nverts;++i) {
+    if(vertex_index_map[i] >= 0) {
+      auto& Ni = N[i];
+      nrigidity += Ni.size();
+    }
+  }
+
+  nterms += nrigidity * 6;
+  nrows += nrigidity * 3;
 
   SparseMatrixd M_lap(valid_vertices.size()*3, ncols);
   SparseMatrixd M_lap_T, M_lapTM_lap;
@@ -573,6 +587,53 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const MatrixX3d &lm
     #endif
     tprior.toc("assembling prior term");
 
+    // Rigidity term
+    {
+      PhGUtils::Timer trigid;
+      trigid.tic();
+
+      const double w_rigid = 1.0;
+      for (int i = 0; i < valid_vertices.size(); ++i) {
+        int vi = valid_vertices[i];
+        auto& Ti = Tm[vi];
+        auto& Ni = N[vi];
+        double wi = w_dist;
+
+        int istart = vertex_index_map[vi] * 3;
+        assert(istart >= 0);
+
+        const auto& vertex_vi = S.vertex(vi);
+
+        int j = 1;
+        double wij = -1.0 / Ni.size();
+        for (auto Nij : Ni) {
+          // FIXME use cotagent weights
+          const double wij = 1.0;
+          int jstart = vertex_index_map[Nij] * 3;
+          assert(jstart >= 0);
+
+          const auto& vertex_vj = S.vertex(Nij);
+
+          M_coeffs.push_back(Tripletd(roffset+0, istart+0, wij*w_rigid));
+          M_coeffs.push_back(Tripletd(roffset+1, istart+1, wij*w_rigid));
+          M_coeffs.push_back(Tripletd(roffset+2, istart+2, wij*w_rigid));
+
+          M_coeffs.push_back(Tripletd(roffset+0, jstart+0, -wij*w_rigid));
+          M_coeffs.push_back(Tripletd(roffset+1, jstart+1, -wij*w_rigid));
+          M_coeffs.push_back(Tripletd(roffset+2, jstart+2, -wij*w_rigid));
+
+          auto vi_m_vj = vertex_vi - vertex_vj;
+          b[roffset+0] = vi_m_vj[0];
+          b[roffset+1] = vi_m_vj[1];
+          b[roffset+2] = vi_m_vj[2];
+
+          roffset += 3;
+        }
+      }
+
+      trigid.toc("assembling rigidity term");
+    }
+
 #if USE_PRECOMPUTED_LAPLACIAN_TERM
     // Nothing to do here since it's pre-computed
 #else
@@ -754,6 +815,676 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const MatrixX3d &lm
   }
 
   return D;
+}
+
+namespace {
+struct NormalCostFunction {
+  NormalCostFunction(const BasicMesh& mesh,
+                     const vector<set<int>>& incident_faces,
+                     const map<int, int>& ptrs_mapper,
+                     const NormalConstraint& constraint,
+                     double weight)
+    : mesh(mesh), incident_faces(incident_faces), ptrs_mapper(ptrs_mapper),
+      constraint(constraint), weight(weight) {}
+
+  Vector3d computeNormal(const double *const *params, int vidx) const {
+    auto incident_faces_i = incident_faces[vidx];
+
+    Vector3d n(0, 0, 0);
+    double area_sum = 0;
+    // Compute the face normal for each of these faces
+    for(auto i : incident_faces_i) {
+      auto face_i = mesh.face(i);
+
+      const double* params_0 = params[ptrs_mapper.at(face_i[0])];
+      Vector3d v0(*params_0, *(params_0+1), *(params_0+2));
+
+      const double* params_1 = params[ptrs_mapper.at(face_i[1])];
+      Vector3d v1(*params_1, *(params_1+1), *(params_1+2));
+
+      const double* params_2 = params[ptrs_mapper.at(face_i[2])];
+      Vector3d v2(*params_2, *(params_2+1), *(params_2+2));
+
+      auto v0v1 = v1 - v0;
+      auto v0v2 = v2 - v0;
+      auto n_i = v0v1.cross(v0v2);
+      double area = n.norm();
+
+      n += n_i;
+      area_sum += area;
+    }
+
+    return n / area_sum;
+  }
+
+  bool operator()(const double *const *params, double *residual) const {
+    // Compute the current normal at this point
+    auto face_i = mesh.face(constraint.fidx);
+    Vector3d n0 = computeNormal(params, face_i[0]);
+    Vector3d n1 = computeNormal(params, face_i[1]);
+    Vector3d n2 = computeNormal(params, face_i[2]);
+
+    Vector3d normal_i = n0 * constraint.bcoords[0]
+                      + n1 * constraint.bcoords[1]
+                      + n2 * constraint.bcoords[2];
+
+    auto print_vector = [](Vector3d v) {
+      cout << "(" << v[0] << ", " << v[1] << ", " << v[2] << ")" << endl;
+    };
+
+    residual[0] = (normal_i.normalized() - constraint.n).norm() * weight;
+
+    /*
+    print_vector(normal_i);
+    print_vector(constraint.n);
+    cout << weight << ", " << residual[0] << endl;
+     */
+
+    return true;
+  }
+
+  const BasicMesh& mesh;
+  const vector<set<int>>& incident_faces;
+  map<int, int> ptrs_mapper;
+  NormalConstraint constraint;
+  double weight;
+};
+
+struct PointCostFunction {
+  PointCostFunction(Vector3d p0, double weight) : p0(p0), weight(weight) {}
+
+  template <typename T>
+  bool operator()(const T* const params, T* residual) const {
+    residual[0] = (T(p0[0]) - params[0]) * T(weight);
+    residual[1] = (T(p0[1]) - params[1]) * T(weight);
+    residual[2] = (T(p0[2]) - params[2]) * T(weight);
+
+    return true;
+  }
+
+  Vector3d p0;
+  double weight;
+};
+
+struct DistortionCostFunction {
+  DistortionCostFunction(const MatrixXd& Tm, const set<int>& neighbors, double weight)
+    : Tm(Tm), neighbors(neighbors), weight(weight) {}
+
+  bool operator()(const double *const *params, double *residual) const {
+    Matrix3d I = Matrix3d::Identity();
+    Vector3d ivec = (I - Tm.block(0, 0, 3, 3)) * Vector3d(params[0][0], params[0][1], params[0][2]);
+
+    double wij = -1.0 / neighbors.size();
+    int jidx = 1;
+    Vector3d jsum(0, 0, 0);
+    for(auto j : neighbors) {
+      Vector3d jvec = (I * wij - Tm.block(0, jidx*3, 3, 3))
+                    * Vector3d(params[jidx][0],params[jidx][1],params[jidx][2]);
+      jsum += jvec;
+      ++jidx;
+    }
+
+    residual[0] = ivec[0] + jsum[0];
+    residual[1] = ivec[1] + jsum[1];
+    residual[2] = ivec[2] + jsum[2];
+
+    return true;
+  }
+
+  mutable MatrixXd Tm;
+  set<int> neighbors;
+  double weight;
+};
+
+
+  struct GraphCostFunction {
+    GraphCostFunction(Vector3d ref, double weight) : ref(ref), weight(weight) {}
+
+    template <typename T>
+    bool operator()(const T* const p0, const T* const p1, T* residual) const {
+      residual[0] = (p0[0] - p1[0] - T(ref[0])) * T(weight);
+      residual[1] = (p0[1] - p1[1] - T(ref[1])) * T(weight);
+      residual[2] = (p0[2] - p1[2] - T(ref[2])) * T(weight);
+
+      return true;
+    }
+
+    Vector3d ref;
+    double weight;
+  };
+}
+
+BasicMesh MeshDeformer::deformWithNormals(
+  const vector<NormalConstraint>& normals,
+  const MatrixX3d& lm_points,
+  int itmax) {
+    //cout << "deformation with mesh ..." << endl;
+    int nverts = S.NumVertices();
+    int nfaces = S.NumFaces();
+
+    // find the neighbor information of every vertex in the source mesh
+    vector<set<int>> neighbors(nverts);
+    vector<set<int>> incident_faces(nverts);
+    for (int i = 0; i < nfaces; ++i) {
+      auto Fi = S.face(i);
+      int v1 = Fi[0], v2 = Fi[1], v3 = Fi[2];
+
+      neighbors[v1].insert(v2); neighbors[v1].insert(v3);
+      neighbors[v2].insert(v1); neighbors[v2].insert(v3);
+      neighbors[v3].insert(v1); neighbors[v3].insert(v2);
+
+      incident_faces[v1].insert(i);
+      incident_faces[v2].insert(i);
+      incident_faces[v3].insert(i);
+    }
+
+    // compute delta_i
+    MatrixXd delta(nverts, 3);
+    for (int i = 0; i < nverts; ++i) {
+      auto& Ni = neighbors[i];
+
+      Vector3d Si(0, 0, 0);
+      for (auto j : Ni) {
+        Si += S.vertex(j);
+      }
+
+      delta.row(i) = S.vertex(i) - Si / static_cast<double>(Ni.size());
+    }
+
+    auto makeVMatrix = [](double x, double y, double z) {
+      MatrixXd V = MatrixXd::Zero(3, 7);
+      /*
+       *     x   0  z -y 1 0 0
+       *     y  -z  0  x 0 1 0
+       *     z   y -x  0 0 0 1
+       */
+      V(0, 0) =  x; V(1, 0) =  y;  V(2, 0) =  z;
+                    V(1, 1) = -z;  V(2, 1) =  y;
+      V(0, 2) =  z;                V(2, 2) = -x;
+      V(0, 3) = -y; V(1, 3) = x;
+      V(0, 4) = 1;
+      V(1, 5) = 1;
+      V(2, 6) = 1;
+
+      return V;
+    };
+
+    vector<MatrixXd> Vs(nverts);
+    for(int i = 0; i < nverts; ++i) {
+      auto vert_i = S.vertex(i);
+      Vs[i] = makeVMatrix(vert_i[0], vert_i[1], vert_i[2]);
+    }
+
+    // @TODO precompute all V matrices
+    // compute A matrix
+    vector<MatrixXd> A(nverts);
+    for (int i = 0; i < nverts; ++i) {
+      auto& Ni = neighbors[i];
+      A[i] = MatrixXd::Zero(3*(Ni.size()+1), 7);
+
+      // set the vertex's terms
+      A[i].topRows(3) = Vs[i];
+
+      // set the neighbor terms
+      int roffset = 3;
+      for (auto j : Ni) {
+        A[i].middleRows(roffset, 3) = Vs[j];
+        roffset += 3;
+      }
+    }
+
+    auto makeDMatrix = [](double x, double y, double z) {
+      MatrixXd D = MatrixXd::Zero(3, 7);
+      /*
+       *     x   0  z -y 0 0 0
+       *     y  -z  0  x 0 0 0
+       *     z   y -x  0 0 0 0
+       */
+      D(0, 0) =  x; D(1, 0) =  y;  D(2, 0) =  z;
+                    D(1, 1) = -z;  D(2, 1) =  y;
+      D(0, 2) =  z;                D(2, 2) = -x;
+      D(0, 3) = -y; D(1, 3) = x;
+
+      return D;
+    };
+
+    // compute T matrix
+    vector<MatrixXd> Tm(nverts);
+    for (int i = 0; i < nverts; ++i) {
+      int offset_i = i * 3;
+      MatrixXd Di = makeDMatrix(delta(i, 0), delta(i, 1), delta(i, 2));
+      auto& Ai = A[i];
+      #if 0
+      MatrixXd At = Ai.transpose();
+      MatrixXd AtAi = At * Ai;
+      //cout << AtAi << endl;
+      MatrixXd invAtAi = AtAi.inverse();
+      //cout << invAtAi << endl;
+      Tm[i] = Di * (invAtAi * At);
+      #else
+      Tm[i] = Di * ((Ai.transpose() * Ai).inverse() * Ai.transpose());
+      #endif
+      //cout << Tm[i] << endl;
+    }
+
+    int npoints = normals.size();
+
+    using Tripletd = Eigen::Triplet<double>;
+    using SparseMatrixd = Eigen::SparseMatrix<double, Eigen::RowMajor>;
+
+    // pre-compute Laplacian part of M
+  #define USE_PRECOMPUTED_LAPLACIAN_TERM 1
+  #if USE_PRECOMPUTED_LAPLACIAN_TERM
+    // Establish vertex-index mapping
+    vertex_index_map.clear();
+    vertex_index_map.resize(S.NumVertices(), -1);
+    int vertex_index = 0;
+
+    // Add valid vertices
+    vector<int> inverse_vertex_index_map;
+    for(auto vi : valid_vertices) {
+      vertex_index_map[vi] = vertex_index;
+      inverse_vertex_index_map.push_back(vi);
+      ++vertex_index;
+    }
+
+    // Add boundary vertices
+    for(auto vi : fixed_faces_boundary_vertices) {
+      if( vertex_index_map[vi] == -1 ) {
+        vertex_index_map[vi] = vertex_index;
+        inverse_vertex_index_map.push_back(vi);
+        ++vertex_index;
+      }
+    }
+
+    // Add landmarks vertices
+    // Assume the landmarks are vertices of the valid faces
+    for(auto vi : landmarks) {
+      if( vertex_index_map[vi] == -1 ) {
+        vertex_index_map[vi] = vertex_index;
+        inverse_vertex_index_map.push_back(vi);
+        ++vertex_index;
+      }
+    }
+    const int ncols = vertex_index * 3;
+
+    //cout << "ncols = " << ncols << endl;
+
+    // count the total number of terms
+    int nrows = 0;
+    int nterms = 0;
+
+    // add ICP terms
+    nterms += npoints * 9;
+    nrows += npoints * 3;
+
+    //cout << "npoints = " << npoints << endl;
+
+    // add landmarks terms
+    int ndata = landmarks.size();
+    nterms += ndata * 3;
+    nrows += ndata * 3;
+
+    //cout << "ndata = " << ndata << endl;
+
+    // add prior terms
+    //int nprior = S.NumVertices();
+    int nprior = fixed_faces_boundary_vertices.size();
+    nterms += nprior * 3;
+    nrows += nprior * 3;
+
+    //cout << "nprior = " << nprior << endl;
+
+    // add distortion terms
+    // the number of matrix elements in distortion term
+    int ndistortion = 0;
+    for (int i=0;i<nverts;++i) {
+      if(vertex_index_map[i] >= 0) {
+        auto& Ni = neighbors[i];
+        ndistortion += (Ni.size() + 1);
+      }
+    }
+    ndistortion *= 9;
+
+    //cout << "ndistortion = " << valid_vertices.size() << endl;
+
+    nterms += ndistortion;
+    //nrows += S.NumVertices() * 3;
+    nrows += valid_vertices.size() * 3;
+
+    #endif
+
+    BasicMesh D = S; // make a copy of the source mesh
+    D.ComputeNormals();
+
+    // main deformation loop
+    int iters = 0;
+
+    double ratio_data2icp = max(0.1, 10.0*lm_points.rows() / (double) S.NumVertices());
+    //cout << ratio_data2icp << endl;
+    double w_icp = 0, w_icp_step = ratio_data2icp;
+    double w_data = 10.0*74.0/lm_points.rows(), w_data_step = w_data/itmax;
+    double w_dist = 10000.0 * ratio_data2icp, w_dist_step = w_dist/itmax;
+    double w_prior = 1.0, w_prior_step = w_prior*0.95/itmax;
+
+    auto print_vector = [](Vector3d v) {
+      cout << "(" << v[0] << ", " << v[1] << ", " << v[2] << ")" << endl;
+    };
+
+
+    auto compute_normal = [&](const double *params, int vidx) -> Vector3d {
+      auto incident_faces_i = incident_faces[vidx];
+
+      Vector3d n(0, 0, 0);
+      double area_sum = 0;
+      // Compute the face normal for each of these faces
+      for(auto i : incident_faces_i) {
+        auto face_i = D.face(i);
+
+        const double* params_0 = params + face_i[0] * 3;
+        Vector3d v0(*params_0, *(params_0+1), *(params_0+2));
+
+        const double* params_1 = params + face_i[1] * 3;
+        Vector3d v1(*params_1, *(params_1+1), *(params_1+2));
+
+        const double* params_2 = params + face_i[2] * 3;
+        Vector3d v2(*params_2, *(params_2+1), *(params_2+2));
+
+        auto v0v1 = v1 - v0;
+        auto v0v2 = v2 - v0;
+        auto n_i = v0v1.cross(v0v2);
+        double area = n.norm();
+
+        n += n_i;
+        area_sum += area;
+      }
+
+      return n / area_sum;
+    };
+
+    while (iters++ < itmax) {
+      cout << "iteration " << iters << endl;
+
+      vector<double> params(D.NumVertices()*3);
+      for(int i=0,offset=0;i<D.NumVertices();++i) {
+        auto v_i = D.vertex(i);
+        params[offset] = v_i[0];++offset;
+        params[offset] = v_i[1];++offset;
+        params[offset] = v_i[2];++offset;
+      }
+
+      // compute fitting error
+      double Efit = 0;
+      {
+        boost::timer::auto_cpu_timer timer_compute_error(
+          "Fitting error computation time = %w seconds.\n");
+        for (int i = 0, idx = 0; i < npoints; ++i) {
+          auto f_i = D.face(normals[i].fidx);
+
+          auto vn0 = compute_normal(params.data(), f_i[0]);
+          auto vn1 = compute_normal(params.data(), f_i[1]);
+          auto vn2 = compute_normal(params.data(), f_i[2]);
+
+          auto vn_i = vn0 * normals[i].bcoords[0]
+                      + vn1 * normals[i].bcoords[1]
+                      + vn2 * normals[i].bcoords[2];
+
+          double Ei = (normals[i].n - vn_i.normalized()).norm();
+          Efit += Ei;
+          //Efit = max(Efit, Ei);
+        }
+      }
+      Efit /= npoints;
+      ColorStream(ColorOutput::Red)<< "Efit = " << Efit;
+
+  #if USE_PRECOMPUTED_LAPLACIAN_TERM
+      // Nothing to do here
+  #else
+      // Establish vertex-index mapping
+      vertex_index_map.clear();
+      vertex_index_map.resize(S.NumVertices(), -1);
+      int vertex_index = 0;
+
+      // Add valid vertices
+      vector<int> inverse_vertex_index_map;
+      for(auto vi : valid_vertices) {
+        vertex_index_map[vi] = vertex_index;
+        inverse_vertex_index_map.push_back(vi);
+        ++vertex_index;
+      }
+
+      // Add boundary vertices
+      for(auto vi : fixed_faces_boundary_vertices) {
+        if( vertex_index_map[vi] == -1 ) {
+          vertex_index_map[vi] = vertex_index;
+          inverse_vertex_index_map.push_back(vi);
+          ++vertex_index;
+        }
+      }
+
+      // Add landmarks vertices
+      // Assume the landmarks are vertices of the valid faces
+      for(auto vi : landmarks) {
+        if( vertex_index_map[vi] == -1 ) {
+          vertex_index_map[vi] = vertex_index;
+          inverse_vertex_index_map.push_back(vi);
+          ++vertex_index;
+        }
+      }
+      const int ncols = vertex_index * 3;
+
+      //cout << "ncols = " << ncols << endl;
+
+      // count the total number of terms
+      int nrows = 0;
+      int nterms = 0;
+
+      // add ICP terms
+      nterms += npoints * 9;
+      nrows += npoints * 3;
+
+      //cout << "npoints = " << npoints << endl;
+
+      // add landmarks terms
+      int ndata = landmarks.size();
+      nterms += ndata * 3;
+      nrows += ndata * 3;
+
+      //cout << "ndata = " << ndata << endl;
+
+      // add prior terms
+      //int nprior = S.NumVertices();
+      int nprior = fixed_faces_boundary_vertices.size();
+      nterms += nprior * 3;
+      nrows += nprior * 3;
+
+      //cout << "nprior = " << nprior << endl;
+
+      // add distortion terms
+      // the number of matrix elements in distortion term
+      int ndistortion = 0;
+      for (int i=0;i<nverts;++i) {
+        if(vertex_index_map[i] >= 0) {
+          auto& Ni = neighbors[i];
+          ndistortion += (Ni.size() + 1);
+        }
+      }
+      ndistortion *= 9;
+
+      //cout << "ndistortion = " << valid_vertices.size() << endl;
+
+      nterms += ndistortion;
+      //nrows += S.NumVertices() * 3;
+      nrows += valid_vertices.size() * 3;
+  #endif
+
+      Problem problem;
+
+      bool enable_normals_term = true;
+      bool enable_landmarks_term = true;
+      bool enable_prior_term = true;
+      bool enable_laplacian_term = true;
+      bool enable_graph_term = true;
+
+      // normals term
+      if(enable_normals_term){
+        boost::timer::auto_cpu_timer time_graph(
+          "Time for assembling normals term = %w seconds.\n"
+        );
+
+        for(int i=0;i<normals.size();++i) {
+          auto face_i = D.face(normals[i].fidx);
+
+          map<int, double*> ptrs;
+          for(int vi=0;vi<3;++vi) {
+            auto& neighbors_vi = neighbors[face_i[vi]];
+            for(auto vj : neighbors_vi) {
+              if(!ptrs.count(vj)) {
+                ptrs.insert(make_pair(vj, params.data() + vj * 3));
+              }
+            }
+          }
+
+          vector<double*> params_i;
+          map<int, int> ptrs_mapper;
+          int loc = 0;
+          for(auto p : ptrs) {
+            params_i.push_back(p.second);
+            ptrs_mapper.insert(make_pair(p.first, loc++));
+          }
+
+          ceres::DynamicNumericDiffCostFunction<NormalCostFunction> *func_i =
+            new ceres::DynamicNumericDiffCostFunction<NormalCostFunction>(
+              new NormalCostFunction(D, incident_faces, ptrs_mapper, normals[i], w_icp));
+
+          for(int i=0;i<params_i.size();++i) func_i->AddParameterBlock(3);
+          func_i->SetNumResiduals(1);
+          problem.AddResidualBlock(func_i, NULL, params_i);
+        }
+      }
+
+      if(enable_landmarks_term){
+        // landmarks term term
+        boost::timer::auto_cpu_timer time_graph(
+          "Time for assembling landmarks term = %w seconds.\n"
+        );
+        for(int i=0;i<ndata;++i) {
+          int vidx = landmarks[i];
+          ceres::CostFunction* func_i = new ceres::AutoDiffCostFunction<PointCostFunction, 3, 3>(
+            new PointCostFunction(S.vertex(vidx), w_data));
+          problem.AddResidualBlock(func_i, NULL, params.data() + vidx*3);
+        }
+      }
+
+      // prior term, i.e. similarity to source mesh
+      //cout << "assembling prior terms ..." << endl;
+      if(enable_prior_term){
+        boost::timer::auto_cpu_timer time_graph(
+          "Time for assembling prior term = %w seconds.\n"
+        );
+
+        for (int i = 0; i < nprior; ++i) {
+          int vi = fixed_faces_boundary_vertices[i];
+          double wi = w_prior;
+          ceres::CostFunction* func_i = new ceres::AutoDiffCostFunction<PointCostFunction, 3, 3>(
+            new PointCostFunction(S.vertex(vi), w_prior));
+          problem.AddResidualBlock(func_i, NULL, params.data() + vi * 3);
+        }
+      }
+
+      // Laplacian distortion term
+      if(enable_laplacian_term){
+        boost::timer::auto_cpu_timer time_graph(
+          "Time for assembling Laplacian distortion term = %w seconds.\n"
+        );
+
+        for(int i=0;i<D.NumVertices();++i) {
+          ceres::DynamicNumericDiffCostFunction<DistortionCostFunction> *func_i =
+            new ceres::DynamicNumericDiffCostFunction<DistortionCostFunction>(
+              new DistortionCostFunction(Tm[i], neighbors[i], w_dist));
+          vector<double*> params_i{params.data() + i * 3};
+          func_i->AddParameterBlock(3);
+          for(auto j : neighbors[i]) {
+            func_i->AddParameterBlock(3);
+            params_i.push_back(params.data() + j * 3);
+          }
+          func_i->SetNumResiduals(3);
+          problem.AddResidualBlock(func_i, NULL, params_i);
+        }
+
+      }
+
+      // Graph constraints
+      if(enable_graph_term){
+        boost::timer::auto_cpu_timer time_graph(
+          "Time for assembling graph term = %w seconds.\n"
+        );
+
+        const double w_graph = 10.0;
+
+        for(int i=0;i<D.NumVertices();++i) {
+          for(auto j : neighbors[i]) {
+            ceres::CostFunction* func_ij = new ceres::AutoDiffCostFunction<GraphCostFunction, 3, 3, 3>(
+              new GraphCostFunction(S.vertex(i) - S.vertex(j), w_graph)
+            );
+            problem.AddResidualBlock(func_ij, NULL, params.data() + i * 3, params.data() + j * 3);
+          }
+        }
+      }
+
+      // Sovle the problem
+      {
+        boost::timer::auto_cpu_timer timer_solve(
+          "Problem solve time = %w seconds.\n");
+        cout << "Sovling the problem ..." << endl;
+        ceres::Solver::Options options;
+        options.max_num_iterations = 10;
+        //options.minimizer_type = ceres::LINE_SEARCH;
+        options.line_search_direction_type = ceres::LBFGS;
+
+        //options.initial_trust_region_radius = 0.25;
+        //options.min_trust_region_radius = 0.001;
+        //options.max_trust_region_radius = 0.5;
+        //options.min_lm_diagonal = 1.0;
+        //options.max_lm_diagonal = 1.0;
+
+        options.num_threads = 8;
+        options.num_linear_solver_threads = 8;
+        options.minimizer_progress_to_stdout = true;
+        ceres::Solver::Summary summary;
+        ceres::Solve(options, &problem, &summary);
+        cout << summary.FullReport() << endl;
+      }
+
+      const auto& x = params;
+
+      // update the vertices of D using the x vector
+      #if 1
+      for(int i=0;i<nverts;++i) {
+        D.set_vertex(i, Vector3d(x[i*3+0],
+                                 x[i*3+1],
+                                 x[i*3+2]));
+      }
+      #else
+      for(int i=0;i<inverse_vertex_index_map.size();++i) {
+        D.set_vertex(inverse_vertex_index_map[i], Vector3d(x[i*3+0],
+                                                           x[i*3+1],
+                                                           x[i*3+2]));
+      }
+      #endif
+
+      // update weighting factors
+      // increase w_icp
+      w_icp = iters * w_icp_step;
+      // decrease w_data
+      //      w_data = (itmax - iters) * w_data_step;
+      // decrease w_dist
+      w_dist = sqrt((itmax - iters) * w_dist_step);
+      // decrease w_prior
+      w_prior = (itmax - iters) * w_prior_step;
+    }
+
+    return D;
 }
 
 vector<ICPCorrespondence> MeshDeformer::findClosestPoints_projection(const MatrixX3d &P, const BasicMesh &mesh) {

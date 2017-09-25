@@ -8,6 +8,8 @@
 #include <MultilinearReconstruction/basicmesh.h>
 #include <MultilinearReconstruction/ioutilities.h>
 
+#include <boost/timer/timer.hpp>
+
 #include "json/src/json.hpp"
 using json = nlohmann::json;
 
@@ -53,6 +55,7 @@ public:
   }
 
   double getError() const {
+    boost::timer::auto_cpu_timer t("[compute error] error computation time = %w seconds.\n");
     double avg_error = 0;
     int cnt = 0;
     for(auto x : dists) {
@@ -233,6 +236,7 @@ public:
   }
 
   void Save(const string& filename) {
+    boost::timer::auto_cpu_timer t("[save image] image save time = %w seconds.\n");
     if(silent) {
       QImage pixmap = ocanvas->render();
       pixmap.save(filename.c_str());
@@ -243,6 +247,7 @@ public:
   }
 
   void SaveError(const string& filename) {
+    boost::timer::auto_cpu_timer t("[save error] error save time = %w seconds.\n");
     ofstream fout(filename);
     fout << avg_error << endl;
     fout.close();

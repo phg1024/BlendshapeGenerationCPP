@@ -11,6 +11,11 @@ struct ICPCorrespondence {
   double weight;         // weight of this point
 };
 
+struct NormalConstraint {
+  int fidx;
+  Eigen::Vector3d bcoords, n;
+};
+
 class MeshDeformer
 {
 public:
@@ -138,6 +143,7 @@ public:
 
   BasicMesh deformWithMesh(const BasicMesh &T, const MatrixX3d &lm_points, int itmax = 10);
   BasicMesh deformWithPoints(const MatrixX3d &P, const MatrixX3d &lm_points, int itmax = 10);
+  BasicMesh deformWithNormals(const vector<NormalConstraint> &normals, const MatrixX3d &lm_points, int itmax = 10);
 
 protected:
   vector<ICPCorrespondence> findClosestPoints_projection(const MatrixX3d &P, const BasicMesh &mesh);

@@ -79,6 +79,12 @@ void BlendshapeRefiner::SetPointCloudsPath(const string& path) {
   cout << "done." << endl;
 }
 
+void BlendshapeRefiner::SetExampleMeshesPath(const string &path){
+  cout << "Setting example meshes path to " << path << endl;
+  example_meshes_path = fs::path(path);
+  cout << "done." << endl;
+}
+
 void BlendshapeRefiner::SetInputBlendshapesPath(const string& path) {
   cout << "Setting input blendshapes path to " << path << endl;
   input_blendshapes_path = fs::path(path);
@@ -123,10 +129,7 @@ void BlendshapeRefiner::LoadInitialBlendshapes() {
 
 void BlendshapeRefiner::LoadSelectionFile(const string& selection_filename) {
   selection_indices = LoadIndices((resources_path / fs::path(selection_filename)).string());
-
-  for(auto idx : selection_indices) {
-    selection_to_order_map[idx] = -1;
-  }
+  cout << "selection indices loaded." << endl;
 }
 
 namespace {
@@ -149,34 +152,25 @@ void BlendshapeRefiner::LoadInputReconstructionResults(const string &settings_fi
 
   image_bundles.resize(selection_indices.size());
   int order = 0;
-  for(auto& p : image_points_filenames) {
-    int img_idx = getIndex(p.first);
-    if( selection_to_order_map.find(img_idx) == selection_to_order_map.end() ) {
-      ++order;
-      continue;
-    }
+  for(auto& img_idx : selection_indices) {
+    cout << img_idx << endl;
 
-    int selector_order = -1;
-    for(int j=0;j<selection_indices.size();++j) {
-      if(selection_indices[j] == img_idx) {
-        selector_order = j;
-        break;
-      }
-    }
-
-    cout << p.first << endl;
-    selection_to_order_map[img_idx] = order++;
-
-    fs::path image_filename = resources_path / fs::path(p.first);
-    fs::path pts_filename = resources_path / fs::path(p.second);
-    fs::path res_filename = reconstructions_path / fs::path(p.first + ".res");
+    fs::path image_filename = resources_path / fs::path(to_string(img_idx) + ".jpg");
+    fs::path pts_filename = resources_path / fs::path(to_string(img_idx) + ".pts");
+    fs::path res_filename = reconstructions_path / fs::path(to_string(img_idx) + ".jpg.res");
     cout << "[" << image_filename << ", " << pts_filename << "]" << endl;
 
     auto image_points_pair = LoadImageAndPoints(image_filename.string(), pts_filename.string());
     auto recon_results = LoadReconstructionResult(res_filename.string());
-    image_bundles[selector_order] = (ImageBundle(image_points_pair.first, image_points_pair.second, recon_results));
+
+    image_bundles[order++] = ImageBundle(to_string(img_idx) + ".jpg",
+                                         image_points_pair.first,
+                                         image_points_pair.second,
+                                         recon_results);
   }
   //utils::pause();
+
+  cout << selection_indices.size() << " reconstruction results loaded." << endl;
 
   // Set the number of poses
   num_poses = selection_indices.size();
@@ -213,7 +207,7 @@ void BlendshapeRefiner::LoadInputPointClouds() {
   point_clouds.resize(num_poses);
   for(int i=0;i<num_poses;++i) {
     int img_idx = selection_indices[i];
-    int point_cloud_idx = selection_to_order_map[img_idx];
+    int point_cloud_idx = img_idx;
     assert(point_cloud_idx != -1);
 
     bool need_rotation = true;
@@ -233,7 +227,53 @@ void BlendshapeRefiner::LoadInputPointClouds() {
 
     // Write this out so we can measure the reconstruction error later
     {
-      ofstream fout( InBlendshapesDirectory("P_" + to_string(i) + ".pts") );
+      ofstream fout( InBlendshapesDirectory("P_" + to_string(selection_indices[i]) + ".obj") );
+      for(int j=0;j<point_clouds[i].rows();++j) {
+        const auto& row_j = point_clouds[i].row(j);
+        fout << "v " << row_j[0] << ' ' << row_j[1] << ' ' << row_j[2] << '\n';
+      }
+      fout.close();
+    }
+
+  }
+
+  reporter.Toc();
+}
+
+void BlendshapeRefiner::LoadInputExampleMeshes() {
+  reporter.Tic("Loading input example meshes");
+
+  // Load all points files
+  point_clouds.resize(num_poses);
+  for(int i=0;i<num_poses;++i) {
+    int img_idx = selection_indices[i];
+    int point_cloud_idx = img_idx;
+    assert(point_cloud_idx != -1);
+
+    // Load the example mesh
+
+    // Sample the mesh to get point clouds
+    BasicMesh example_i( ( example_meshes_path / fs::path(to_string(point_cloud_idx)) / fs::path("deformed.obj") ).string() );
+
+    // Load the normal constraints to get all the relevant faces
+    set<int> pointcloud_faces;
+    {
+      string normals_constraints_filename =
+        (example_meshes_path / fs::path(to_string(point_cloud_idx)) / fs::path("constraints.txt")).string();
+      ifstream fin(normals_constraints_filename);
+      while(fin) {
+        int fidx;
+        double bx, by, bz, nx, ny, nz;
+        fin >> fidx >> bx >> by >> bz >> nx >> ny >> nz;
+        pointcloud_faces.insert(fidx);
+      }
+    }
+
+    point_clouds[i] = example_i.samplePoints(8, pointcloud_faces);
+
+    // Write this out so we can measure the reconstruction error later
+    {
+      ofstream fout( InBlendshapesDirectory("P_" + to_string(selection_indices[i]) + ".obj") );
       for(int j=0;j<point_clouds[i].rows();++j) {
         const auto& row_j = point_clouds[i].row(j);
         fout << "v " << row_j[0] << ' ' << row_j[1] << ' ' << row_j[2] << '\n';
@@ -281,7 +321,7 @@ void BlendshapeRefiner::CreateTrainingShapes() {
     }
 
     S0[i].ComputeNormals();
-    S0[i].Write( InBlendshapesDirectory("Sinit_" + to_string(i) + ".obj") );
+    S0[i].Write( InBlendshapesDirectory("Sinit_" + to_string(selection_indices[i]) + ".obj") );
   }
   ColorStream(ColorOutput::Blue)<< "initial training shapes created.";
 
@@ -311,7 +351,7 @@ void BlendshapeRefiner::CreateTrainingShapes() {
 
     deformer.setLandmarks(vindices_i);
     S[i] = deformer.deformWithPoints(point_clouds[i], Slandmarks[i], 20);
-    S[i].Write( InBlendshapesDirectory("S0_" + to_string(i) + ".obj") );
+    S[i].Write( InBlendshapesDirectory("S0_" + to_string(selection_indices[i]) + ".obj") );
   }
   ColorStream(ColorOutput::Blue)<< "refined training shapes created.";
 
@@ -363,7 +403,7 @@ void BlendshapeRefiner::InitializeBlendshapes() {
       Ti.vertices() += image_bundles[i].params.params_model.Wexp_FACS(j) * (B[j].vertices() - B[0].vertices());
     }
     Ti.ComputeNormals();
-    Ti.Write( InBlendshapesDirectory("S0_verify_" + std::to_string(i) + ".obj") );
+    Ti.Write( InBlendshapesDirectory("S0_verify_" + std::to_string(selection_indices[i]) + ".obj") );
   }
 
   reporter.Toc();
@@ -947,18 +987,19 @@ void BlendshapeRefiner::Refine(bool initialize_only, bool disable_neutral_opt) {
     // Compute per-face prior weight using the mask
     // apply strong weights to these region
     vector<double> w_mask(num_faces, 1);
+    const double BIG_WEIGHT = 10000.0;
     if(mask_nose_and_fore_head) {
       for(auto fidx : hair_region_indices) {
         //cout << fidx << endl;
-        w_mask[fidx] = 10000.0;
+        w_mask[fidx] = BIG_WEIGHT;
       }
       for(auto fidx : extended_hair_region_indices) {
         //cout << fidx << endl;
-        w_mask[fidx] = 10000.0;
+        w_mask[fidx] = BIG_WEIGHT;
       }
       for(auto fidx : nose_forehead_indices) {
         //cout << fidx << endl;
-        w_mask[fidx] = 5000.0;
+        w_mask[fidx] = BIG_WEIGHT;
       }
     } else {
       cout << "Not masking nose and fore head region." << endl;
@@ -1121,7 +1162,7 @@ void BlendshapeRefiner::Refine(bool initialize_only, bool disable_neutral_opt) {
       // update the reconstructed mesh
       S[i] = Ti;
 
-      S[i].Write( InBlendshapesDirectory("S_fitted_" + to_string(i) + ".obj") );
+      S[i].Write( InBlendshapesDirectory("S_fitted_" + to_string(selection_indices[i]) + ".obj") );
     }
 
     if(iters == maxIters) break;
@@ -1200,7 +1241,7 @@ void BlendshapeRefiner::Refine(bool initialize_only, bool disable_neutral_opt) {
       deformer.setLandmarks(image_bundles[i].params.params_model.vindices);
 
       S[i] = deformer.deformWithPoints(point_clouds[i], Slandmarks[i], 5);
-      S[i].Write( InBlendshapesDirectory("S_refined_" + to_string(i) + ".obj") );
+      S[i].Write( InBlendshapesDirectory("S_refined_" + to_string(selection_indices[i]) + ".obj") );
     }
 
     // compute deformation gradients for S
@@ -1219,9 +1260,9 @@ void BlendshapeRefiner::Refine(bool initialize_only, bool disable_neutral_opt) {
     B[i].Write( InBlendshapesDirectory("B_"+to_string(i)+".obj") );
   }
 
-  // write out the blendshapes
+  // write out the final refined example poses
   for(int i=0;i<num_poses;++i) {
-    S[i].Write( InBlendshapesDirectory("S_"+to_string(i)+".obj") );
+    S[i].Write( InBlendshapesDirectory("S_"+to_string(selection_indices[i])+".obj") );
   }
 }
 
@@ -1557,7 +1598,7 @@ void BlendshapeRefiner::Refine_EBFR() {
       // update the reconstructed mesh
       S[i] = Ti;
 
-      S[i].Write( InBlendshapesDirectory("S_fitted_" + to_string(i) + ".obj") );
+      S[i].Write( InBlendshapesDirectory("S_fitted_" + to_string(selection_indices[i]) + ".obj") );
     }
 
     if(iters == maxIters) break;
@@ -1635,6 +1676,6 @@ void BlendshapeRefiner::Refine_EBFR() {
 
   // write out the blendshapes
   for(int i=0;i<num_poses;++i) {
-    S[i].Write( InBlendshapesDirectory("S_"+to_string(i)+".obj") );
+    S[i].Write( InBlendshapesDirectory("S_"+to_string(selection_indices[i])+".obj") );
   }
 }

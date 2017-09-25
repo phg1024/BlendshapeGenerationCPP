@@ -122,7 +122,7 @@ add_executable(BlendshapeGeneration main.cpp
                interactiverigging.cpp
                blendshapesweightswidget.cpp
                blendshapesweightswidget.h
-               pointcloud.cpp blendshaperefiner.cpp blendshaperefiner.h)
+               pointcloud.cpp blendshaperefiner.cpp blendshaperefiner.h blendshaperefiner_old.cpp blendshaperefiner_old.h)
 
 target_link_libraries(BlendshapeGeneration
                       Qt5::Core

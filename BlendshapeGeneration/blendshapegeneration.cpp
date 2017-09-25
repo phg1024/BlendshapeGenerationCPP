@@ -21,8 +21,6 @@ typedef CGAL::AABB_triangle_primitive<K, Iterator> Primitive;
 typedef CGAL::AABB_traits<K, Primitive> AABB_triangle_traits;
 typedef CGAL::AABB_tree<AABB_triangle_traits> Tree;
 
-#include <boost/timer/timer.hpp>
-
 OffscreenBlendshapeVisualizer::OffscreenBlendshapeVisualizer(int w, int h)
   : use_side_view(false), canvasW(w), canvasH(h), has_texture(false) {
   // Load and Parse rendering settings
@@ -207,8 +205,11 @@ void OffscreenBlendshapeVisualizer::paint()
     if( refmesh.NumFaces() > 0 ) drawMeshWithColor(mesh);
     else drawMesh(mesh);
   } else {
+    cout << "Drawing mesh ..." << endl;
     glDepthFunc(GL_LEQUAL);
     drawMesh(refmesh);
+
+    cout << "Drawing vertices mesh ..." << endl;
     glDepthFunc(GL_ALWAYS);
     drawMeshVerticesWithColor(mesh);
   }
@@ -225,7 +226,7 @@ void OffscreenBlendshapeVisualizer::paint()
     double maxVal = (*std::max_element(dists.begin(), dists.end()));
     #else
     double minVal = 0.0;
-    double maxVal = 0.0750;
+    double maxVal = 0.050;
     #endif
     string minStr = "min: " + to_string(minVal);
     string maxStr = "max: " + to_string(maxVal);
@@ -437,10 +438,12 @@ void OffscreenBlendshapeVisualizer::drawMesh(const BasicMesh &m)
   // HACK disable this for rendering textured blendshapes
   glDisable(GL_CULL_FACE);
 
+  cout << m.NumFaces() << endl;
+
   glBegin(GL_TRIANGLES);
   for(int i=0;i<m.NumFaces();++i) {
     if(skip_faces.count(i)) continue;
-    
+
     auto face_i = m.face(i);
     int v1 = face_i[0], v2 = face_i[1], v3 = face_i[2];
 
@@ -449,21 +452,21 @@ void OffscreenBlendshapeVisualizer::drawMesh(const BasicMesh &m)
     //glNormal3d(norm_i[0], norm_i[1], norm_i[2]);
 
     auto p1 = m.vertex(v1), p2 = m.vertex(v2), p3 = m.vertex(v3);
-    auto tf = mesh.face_texture(i);
+    auto tf = m.face_texture(i);
 
-    auto t0 = mesh.texture_coords(tf[0]);
+    auto t0 = m.texture_coords(tf[0]);
     auto n1 = m.vertex_normal(v1);
     glTexCoord2f(t0[0], 1-t0[1]);
     glNormal3d(n1[0], n1[1], n1[2]);
     glVertex3d(p1[0], p1[1], p1[2]);
 
-    auto t1 = mesh.texture_coords(tf[1]);
+    auto t1 = m.texture_coords(tf[1]);
     auto n2 = m.vertex_normal(v2);
     glTexCoord2f(t1[0], 1-t1[1]);
     glNormal3d(n2[0], n2[1], n2[2]);
     glVertex3d(p2[0], p2[1], p2[2]);
 
-    auto t2 = mesh.texture_coords(tf[2]);
+    auto t2 = m.texture_coords(tf[2]);
     auto n3 = m.vertex_normal(v3);
     glTexCoord2f(t2[0], 1-t2[1]);
     glNormal3d(n3[0], n3[1], n3[2]);
@@ -483,7 +486,7 @@ void OffscreenBlendshapeVisualizer::drawMeshWithColor(const BasicMesh &m)
   double maxVal = *(std::max_element(dists.begin(), dists.end()));
   double minVal = *(std::min_element(dists.begin(), dists.end()));
   #else
-  double maxVal = 0.075;
+  double maxVal = 0.05;
   double minVal = 0.0;
   #endif
 
@@ -561,7 +564,7 @@ void OffscreenBlendshapeVisualizer::drawMeshVerticesWithColor(const BasicMesh &m
   double maxVal = *(std::max_element(dists.begin(), dists.end()));
   double minVal = *(std::min_element(dists.begin(), dists.end()));
   #else
-  double maxVal = 0.075;
+  double maxVal = 0.05;
   double minVal = 0.0;
   #endif
 
@@ -636,13 +639,16 @@ void BlendshapeVisualizer::paintGL()
   glEnable(GL_CULL_FACE);
   glCullFace(GL_BACK);
 
+  cout << "Enabling lighting ..." << endl;
   enableLighting();
   if( mesh.NumFaces() > 0 ) {
     if( refmesh.NumFaces() > 0 ) drawMeshWithColor(mesh);
     else drawMesh(mesh);
   } else {
+    cout << "Drawing mesh ..." << endl;
     glDepthFunc(GL_LEQUAL);
     drawMesh(refmesh);
+    cout << "Drawing vertices mesh ..." << endl;
     glDepthFunc(GL_ALWAYS);
     drawMeshVerticesWithColor(mesh);
   }
@@ -654,7 +660,7 @@ void BlendshapeVisualizer::paintGL()
     double maxVal = (*std::max_element(dists.begin(), dists.end()));
     #else
     double minVal = 0.0;
-    double maxVal = 0.075;
+    double maxVal = 0.05;
     #endif
     string minStr = "min: " + to_string(minVal);
     string maxStr = "max: " + to_string(maxVal);
@@ -839,7 +845,7 @@ void BlendshapeVisualizer::drawMeshVerticesWithColor(const BasicMesh &m)
   double maxVal = *(std::max_element(dists.begin(), dists.end()));
   double minVal = *(std::min_element(dists.begin(), dists.end()));
   #else
-  double maxVal = 0.075;
+  double maxVal = 0.05;
   double minVal = 0.0;
   #endif
 
@@ -875,7 +881,7 @@ void BlendshapeVisualizer::drawMeshWithColor(const BasicMesh &m)
   double maxVal = *(std::max_element(dists.begin(), dists.end()));
   double minVal = *(std::min_element(dists.begin(), dists.end()));
   #else
-  double maxVal = 0.075;
+  double maxVal = 0.05;
   double minVal = 0.0;
   #endif
 

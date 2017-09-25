@@ -24,8 +24,9 @@ using json = nlohmann::json;
 
 struct ImageBundle {
   ImageBundle() {}
-  ImageBundle(const QImage& image, const vector<Constraint2D>& points, const ReconstructionResult& params)
-    : image(image), points(points), params(params) {}
+  ImageBundle(const string& filename, const QImage& image, const vector<Constraint2D>& points, const ReconstructionResult& params)
+    : filename(filename), image(image), points(points), params(params) {}
+  string filename;
   QImage image;
   vector<Constraint2D> points;
   ReconstructionResult params;
@@ -40,6 +41,7 @@ public:
   void SetResourcesPath(const string& path);
   void SetReconstructionsPath(const string& path);
   void SetPointCloudsPath(const string& path);
+  void SetExampleMeshesPath(const string& path);
   void SetInputBlendshapesPath(const string& path);
   void SetBlendshapesPath(const string& path);
 
@@ -47,6 +49,7 @@ public:
   void LoadSelectionFile(const string& selection_filename);
   void LoadInputReconstructionResults(const string& settings_filename);
   void LoadInputPointClouds();
+  void LoadInputExampleMeshes();
 
   void Refine(bool initialize_only=false,
               bool disable_neutral_opt=false);
@@ -122,10 +125,10 @@ private:
   vector<BasicMesh> S;      // point cloud deformed training shapes
   vector<MatrixX3d> Slandmarks;
 
-  fs::path resources_path, reconstructions_path, point_clouds_path, input_blendshapes_path;
+  fs::path resources_path, reconstructions_path, input_blendshapes_path;
+  fs::path point_clouds_path, example_meshes_path;
   fs::path blendshapes_path;
   vector<int> selection_indices;
-  map<int, int> selection_to_order_map;
 
   unordered_set<int> hair_region_indices,
                      nose_forehead_indices,

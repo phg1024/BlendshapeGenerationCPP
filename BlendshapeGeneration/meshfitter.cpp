@@ -116,6 +116,20 @@ void FitMesh(const string& meshfile, const string& output_mesh_filename) {
   BasicMesh output_mesh = mesh;
   output_mesh.UpdateVertices(model.GetTM());
   output_mesh.Write(output_mesh_filename);
+
+  // Output the fitted identity and expression
+  {
+    ofstream fout(output_mesh_filename + ".weights");
+    auto write_vector = [](const VectorXd& v, ofstream& os) {
+      os << v.rows() << ' ';
+      for(int i=0;i<v.rows();++i) {
+        os << v(i) << ' ';
+      }
+      os << "\n";
+    };
+    write_vector(wid, fout);
+    write_vector(wexp, fout);
+  }
 }
 
 void printUsage(const string& program_name) {
