@@ -211,10 +211,11 @@ void laplacianDeformation_normals_exp(
   const string& res_filename,
   const string& normals_filename,
   const string& output_mesh_filename,
-  int itmax
+  int itmax,
+  bool subdivided
 ) {
+  cout << subdivided << endl;
   const string datapath("/home/phg/Data/FaceWarehouse_Data_0/");
-  const string mesh_filename(datapath + "Tester_1/Blendshape/shape_0.obj");
 
   const int num_blendshapes = 46;
   vector<BasicMesh> blendshapes(num_blendshapes+1);
@@ -223,8 +224,7 @@ void laplacianDeformation_normals_exp(
     blendshapes[i].ComputeNormals();
   }
 
-  BasicMesh m;
-  m.LoadOBJMesh(mesh_filename);
+  BasicMesh m = blendshapes[0];
 
   auto recon_results = LoadReconstructionResult(res_filename);
   cout << "Recon results loaded." << endl;
@@ -238,7 +238,8 @@ void laplacianDeformation_normals_exp(
     m.ComputeNormals();
   }
 
-  const int num_subdivision = 1;
+  const int num_subdivision = subdivided?0:1;
+  cout << num_subdivision << endl;
   for(int i=0;i<num_subdivision;++i) {
     m.BuildHalfEdgeMesh();
     m.Subdivide();
@@ -370,12 +371,16 @@ int main(int argc, char *argv[])
     int itmax = argc>5?stoi(argv[5]):2;
     laplacianDeformation_normals(res_file, normals_file, output_mesh_file, itmax);
   } else if( option == "-ln_exp" ) {
+    for(int i=0;i<argc;++i) {
+      cout << "argv[" << i << "] = {" << argv[i] << "}" << endl;
+    }
     string res_file = argc>2?argv[2]:"/home/phg/Data/SFS_test/Andy_Lau_400x400/1.jpg.res";
     string normals_file = argc>3?argv[3]:"/home/phg/Data/SFS_test/Andy_Lau_400x400/outputs/constraints.txt";
     string output_mesh_file = argc>4?argv[4]:"deformed.obj";
     int itmax = argc>5?stoi(argv[5]):2;
     string init_bs_path = argc>6?argv[6]:"";
-    laplacianDeformation_normals_exp(init_bs_path, res_file, normals_file, output_mesh_file, itmax);
+    bool subdivided = argc>7?string(argv[7])=="1":false;
+    laplacianDeformation_normals_exp(init_bs_path, res_file, normals_file, output_mesh_file, itmax, subdivided);
   } else if( option == "-lm" ) {
     string res_file = argc>2?argv[2]:"/home/phg/Data/SFS_test/Andy_Lau_400x400/1.jpg.res";
     string target_mesh_file = argc>3?argv[3]:"/home/phg/Data/SFS_test/Andy_Lau_400x400/outputs/deformed.obj";

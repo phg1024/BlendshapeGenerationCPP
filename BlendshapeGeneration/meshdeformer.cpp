@@ -1448,8 +1448,8 @@ BasicMesh MeshDeformer::deformWithNormals(
         //options.min_lm_diagonal = 1.0;
         //options.max_lm_diagonal = 1.0;
 
-        options.num_threads = 8;
-        options.num_linear_solver_threads = 8;
+        options.num_threads = 4;
+        options.num_linear_solver_threads = 4;
         options.minimizer_progress_to_stdout = true;
         ceres::Solver::Summary summary;
         ceres::Solve(options, &problem, &summary);
