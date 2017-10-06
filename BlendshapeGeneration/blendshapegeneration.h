@@ -27,6 +27,10 @@ public:
     use_side_view = val;
   }
 
+  void SetAmbientOcclusion(const vector<float>& AO) {
+    ao = AO;
+  }
+
   void SetSkipFaces(const vector<int>& skip_faces_in, bool subdivided=false) {
     vector<int> faces_to_skip;
     for(auto i : skip_faces_in) {
@@ -98,6 +102,7 @@ protected:
 private:
   bool use_side_view;
   vector<double> dists;
+  vector<float> ao;
   BasicMesh mesh;
   BasicMesh refmesh;
 
@@ -135,6 +140,9 @@ public:
     return QSize(600, 600);
   }
 
+  void SetAmbientOcclusion(const vector<float>& AO) {
+    ao = AO;
+  }
   void SetSideView(bool val) {
     use_side_view = val;
   }
@@ -165,6 +173,7 @@ protected:
 private:
   bool use_side_view;
   vector<double> dists;
+  vector<float> ao;
   BasicMesh mesh;
   BasicMesh refmesh;
 };
@@ -193,6 +202,15 @@ public:
     texture = QImage(filename.c_str());
     if(silent) {
       ocanvas->setTexture(texture);
+    }
+  }
+
+  void SetAmbientOcclusion(const string& filename) {
+    vector<float> ao = LoadFloats(filename);
+    if(silent) {
+      ocanvas->SetAmbientOcclusion(ao);
+    } else {
+      canvas->SetAmbientOcclusion(ao);
     }
   }
 

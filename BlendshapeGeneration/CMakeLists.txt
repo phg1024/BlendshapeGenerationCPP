@@ -139,6 +139,19 @@ target_link_libraries(BlendshapeGeneration
                       meshdeformer
                       meshtransferer)
 
+add_executable(compute_details compute_details.cpp)
+target_link_libraries(compute_details
+        Qt5::Core
+        Qt5::Widgets
+        Qt5::OpenGL
+        CGAL
+        ${MKLLIBS}
+        ${PhGLib}
+        basicmesh
+        ioutilities
+        multilinearmodel
+        meshdeformer)
+
 add_executable(laplaciandeformation laplaciandeformation.cpp)
 target_link_libraries(laplaciandeformation
                       Qt5::Core

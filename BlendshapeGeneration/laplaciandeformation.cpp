@@ -333,6 +333,67 @@ void laplacianDeformation_mesh(
   D.Write(output_mesh_filename);
 }
 
+void laplacianDeformation_mesh_exp(
+  const string& res_filename,
+  const string& init_bs_path,
+  const string& target_mesh_filename,
+  const string& output_mesh_filename,
+  int itmax,
+  bool subdivided
+) {
+  const string datapath("/home/phg/Data/FaceWarehouse_Data_0/");
+  const string mesh_filename(datapath + "Tester_1/Blendshape/shape_0.obj");
+
+  const int num_blendshapes = 46;
+  vector<BasicMesh> blendshapes(num_blendshapes+1);
+  for(int i=0;i<=num_blendshapes;++i) {
+    blendshapes[i].LoadOBJMesh( init_bs_path + "/" + "B_" + to_string(i) + ".obj" );
+    blendshapes[i].ComputeNormals();
+  }
+
+  BasicMesh m = blendshapes[0];
+
+  auto recon_results = LoadReconstructionResult(res_filename);
+  cout << "Recon results loaded." << endl;
+  {
+    MatrixX3d verts0 = blendshapes[0].vertices();
+    MatrixX3d verts = verts0;
+    for(int j=1;j<=num_blendshapes;++j) {
+      verts += (blendshapes[j].vertices() - verts0) * recon_results.params_model.Wexp_FACS(j);
+    }
+    m.vertices() = verts;
+    m.ComputeNormals();
+  }
+
+  const int num_subdivision = subdivided?0:1;
+  cout << num_subdivision << endl;
+  for(int i=0;i<num_subdivision;++i) {
+    m.BuildHalfEdgeMesh();
+    m.Subdivide();
+  }
+
+  m.Write("source.obj");
+
+  BasicMesh target;
+  target.LoadOBJMesh(target_mesh_filename);
+
+  MeshDeformer deformer;
+  deformer.setSource(m);
+
+  // Filter the faces to reduce the search range
+  vector<int> valid_faces = m.filterFaces([&m](Vector3i fi) {
+    Vector3d c = (m.vertex(fi[0]) + m.vertex(fi[1]) + m.vertex(fi[2])) / 3.0;
+    return c[2] > -0.5;
+  });
+  deformer.setValidFaces(valid_faces);
+  // No landmarks
+  deformer.setLandmarks(vector<int>());
+
+  BasicMesh D = deformer.deformWithMesh(target, MatrixX3d(), itmax);
+
+  D.Write(output_mesh_filename);
+}
+
 void printUsage() {
   cout << "Laplacian deformation: [program] -l" << endl;
   cout << "Laplacian deformation with point cloud: [program] -lp" << endl;
@@ -387,6 +448,14 @@ int main(int argc, char *argv[])
     string output_mesh_file = argc>4?argv[4]:"deformed.obj";
     int itmax = argc>5?stoi(argv[5]):20;
     laplacianDeformation_mesh(res_file, target_mesh_file, output_mesh_file, itmax);
+  } else if( option == "-lm_exp" ) {
+    string res_file = argc>2?argv[2]:"/home/phg/Data/SFS_test/Andy_Lau_400x400/1.jpg.res";
+    string target_mesh_file = argc>3?argv[3]:"/home/phg/Data/SFS_test/Andy_Lau_400x400/outputs/deformed.obj";
+    string output_mesh_file = argc>4?argv[4]:"deformed.obj";
+    int itmax = argc>5?stoi(argv[5]):20;
+    string init_bs_path = argc>6?argv[6]:"";
+    bool subdivided = argc>7?string(argv[7])=="1":false;
+    laplacianDeformation_mesh_exp(res_file, init_bs_path, target_mesh_file, output_mesh_file, itmax, subdivided);
   }
 
   return 0;

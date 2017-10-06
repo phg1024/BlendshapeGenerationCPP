@@ -439,6 +439,20 @@ void OffscreenBlendshapeVisualizer::drawMesh(const BasicMesh &m)
   glDisable(GL_CULL_FACE);
 
   cout << m.NumFaces() << endl;
+  cout << m.NumVertices() << endl;
+  cout << ao.size() << endl;
+
+  bool use_ao = !ao.empty();
+  auto set_material_with_ao = [&](float ao_value) {
+    auto& mat_diffuse_json = rendering_settings["material"]["diffuse"];
+    GLfloat mat_diffuse[] = {
+      float(mat_diffuse_json[0]) * ao_value,
+      float(mat_diffuse_json[1]) * ao_value,
+      float(mat_diffuse_json[2]) * ao_value,
+      float(mat_diffuse_json[3])
+    };
+    glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, mat_diffuse);
+  };
 
   glBegin(GL_TRIANGLES);
   for(int i=0;i<m.NumFaces();++i) {
@@ -454,17 +468,23 @@ void OffscreenBlendshapeVisualizer::drawMesh(const BasicMesh &m)
     auto p1 = m.vertex(v1), p2 = m.vertex(v2), p3 = m.vertex(v3);
     auto tf = m.face_texture(i);
 
+    if(use_ao) set_material_with_ao( ao[v1] );
+
     auto t0 = m.texture_coords(tf[0]);
     auto n1 = m.vertex_normal(v1);
     glTexCoord2f(t0[0], 1-t0[1]);
     glNormal3d(n1[0], n1[1], n1[2]);
     glVertex3d(p1[0], p1[1], p1[2]);
 
+    if(use_ao) set_material_with_ao( ao[v2] );
+
     auto t1 = m.texture_coords(tf[1]);
     auto n2 = m.vertex_normal(v2);
     glTexCoord2f(t1[0], 1-t1[1]);
     glNormal3d(n2[0], n2[1], n2[2]);
     glVertex3d(p2[0], p2[1], p2[2]);
+
+    if(use_ao) set_material_with_ao( ao[v3] );
 
     auto t2 = m.texture_coords(tf[2]);
     auto n3 = m.vertex_normal(v3);
