@@ -454,6 +454,8 @@ void OffscreenBlendshapeVisualizer::drawMesh(const BasicMesh &m)
     glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, mat_diffuse);
   };
 
+  bool use_customized_normals = !normals.empty();
+
   glBegin(GL_TRIANGLES);
   for(int i=0;i<m.NumFaces();++i) {
     if(skip_faces.count(i)) continue;
@@ -471,7 +473,13 @@ void OffscreenBlendshapeVisualizer::drawMesh(const BasicMesh &m)
     if(use_ao) set_material_with_ao( ao[v1] );
 
     auto t0 = m.texture_coords(tf[0]);
-    auto n1 = m.vertex_normal(v1);
+    Vector3d n1;
+    if(use_customized_normals) {
+      n1 = Vector3d(normals[v1*3], normals[v1*3+1], normals[v1*3+2]);
+      n1.normalize();
+    } else {
+      n1 = m.vertex_normal(v1);
+    }
     glTexCoord2f(t0[0], 1-t0[1]);
     glNormal3d(n1[0], n1[1], n1[2]);
     glVertex3d(p1[0], p1[1], p1[2]);
@@ -479,7 +487,13 @@ void OffscreenBlendshapeVisualizer::drawMesh(const BasicMesh &m)
     if(use_ao) set_material_with_ao( ao[v2] );
 
     auto t1 = m.texture_coords(tf[1]);
-    auto n2 = m.vertex_normal(v2);
+    Vector3d n2;
+    if(use_customized_normals) {
+      n2 = Vector3d(normals[v2*3], normals[v2*3+1], normals[v2*3+2]);
+      n2.normalize();
+    } else {
+      n2 = m.vertex_normal(v2);
+    }
     glTexCoord2f(t1[0], 1-t1[1]);
     glNormal3d(n2[0], n2[1], n2[2]);
     glVertex3d(p2[0], p2[1], p2[2]);
@@ -487,7 +501,13 @@ void OffscreenBlendshapeVisualizer::drawMesh(const BasicMesh &m)
     if(use_ao) set_material_with_ao( ao[v3] );
 
     auto t2 = m.texture_coords(tf[2]);
-    auto n3 = m.vertex_normal(v3);
+    Vector3d n3;
+    if(use_customized_normals) {
+      n3 = Vector3d(normals[v3*3], normals[v3*3+1], normals[v3*3+2]);
+      n3.normalize();
+    } else {
+      n3 = m.vertex_normal(v3);
+    }
     glTexCoord2f(t2[0], 1-t2[1]);
     glNormal3d(n3[0], n3[1], n3[2]);
     glVertex3d(p3[0], p3[1], p3[2]);

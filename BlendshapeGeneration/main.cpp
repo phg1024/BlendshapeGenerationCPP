@@ -216,6 +216,7 @@ int main(int argc, char *argv[])
     ("skip_faces", po::value<string>(), "Faces to skip rendering")
     ("texture", po::value<string>(), "Texture for the mesh")
     ("ambient_occlusion", po::value<string>(), "Ambient occlusion file")
+    ("normals", po::value<string>(), "Normals file")
     ("sideview", "Visualize the blendshape mesh in side view")
     ("silent", "Silent visualization using offscreen drawing")
     ("save,s", po::value<string>(), "Save the result to a file");
@@ -319,6 +320,7 @@ int main(int argc, char *argv[])
 
       if(vm.count("texture")) w.SetTexture(vm["texture"].as<string>());
       if(vm.count("ambient_occlusion")) w.SetAmbientOcclusion(vm["ambient_occlusion"].as<string>());
+      if(vm.count("normals")) w.SetNormals(vm["normals"].as<string>());
       if(vm.count("rendering_settings")) w.LoadRenderingSettings(vm["rendering_settings"].as<string>());
       if(vm.count("skip_faces")) w.LoadSkipFaces(vm["skip_faces"].as<string>(), vm.count("subdivided"));
 

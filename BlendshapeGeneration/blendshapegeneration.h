@@ -30,7 +30,9 @@ public:
   void SetAmbientOcclusion(const vector<float>& AO) {
     ao = AO;
   }
-
+  void SetNormals(const vector<float>& ns) {
+    normals = ns;
+  }
   void SetSkipFaces(const vector<int>& skip_faces_in, bool subdivided=false) {
     vector<int> faces_to_skip;
     for(auto i : skip_faces_in) {
@@ -102,7 +104,7 @@ protected:
 private:
   bool use_side_view;
   vector<double> dists;
-  vector<float> ao;
+  vector<float> ao, normals;
   BasicMesh mesh;
   BasicMesh refmesh;
 
@@ -143,6 +145,9 @@ public:
   void SetAmbientOcclusion(const vector<float>& AO) {
     ao = AO;
   }
+  void SetNormals(const vector<float>& ns) {
+    normals = ns;
+  }
   void SetSideView(bool val) {
     use_side_view = val;
   }
@@ -173,7 +178,7 @@ protected:
 private:
   bool use_side_view;
   vector<double> dists;
-  vector<float> ao;
+  vector<float> ao, normals;
   BasicMesh mesh;
   BasicMesh refmesh;
 };
@@ -211,6 +216,15 @@ public:
       ocanvas->SetAmbientOcclusion(ao);
     } else {
       canvas->SetAmbientOcclusion(ao);
+    }
+  }
+
+  void SetNormals(const string& filename) {
+    vector<float> normals = LoadFloats(filename);
+    if (silent) {
+      ocanvas->SetNormals(normals);
+    } else {
+      canvas->SetNormals(normals);
     }
   }
 

@@ -219,6 +219,7 @@ void laplacianDeformation_normals_exp(
 
   const int num_blendshapes = 46;
   vector<BasicMesh> blendshapes(num_blendshapes+1);
+#pragma omp parallel for
   for(int i=0;i<=num_blendshapes;++i) {
     blendshapes[i].LoadOBJMesh( init_bs_path + "/" + "B_" + to_string(i) + ".obj" );
     blendshapes[i].ComputeNormals();
@@ -346,6 +347,7 @@ void laplacianDeformation_mesh_exp(
 
   const int num_blendshapes = 46;
   vector<BasicMesh> blendshapes(num_blendshapes+1);
+#pragma omp parallel for
   for(int i=0;i<=num_blendshapes;++i) {
     blendshapes[i].LoadOBJMesh( init_bs_path + "/" + "B_" + to_string(i) + ".obj" );
     blendshapes[i].ComputeNormals();
