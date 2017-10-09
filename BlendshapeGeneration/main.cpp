@@ -101,6 +101,7 @@ void blendShapeGeneration_mesh_blendshapes(
 
 void blendShapeGeneration_pointcloud(
   const string& source_path,
+  int template_id,
   bool subdivision,
   bool disable_neutral_opt,
   bool mask_nose_and_fore_head) {
@@ -112,12 +113,12 @@ void blendShapeGeneration_pointcloud(
         {"mask_nose_and_fore_head", mask_nose_and_fore_head}
       });
   refiner.SetBlendshapeCount(46);
-  refiner.LoadTemplateMeshes("/home/phg/Data/FaceWarehouse_Data_0/Tester_1/Blendshape/", "shape_");
+  refiner.LoadTemplateMeshes("/home/phg/Data/FaceWarehouse_Data_0/Tester_" + to_string(template_id) + "/Blendshape/", "shape_");
 
   refiner.SetResourcesPath(source_path);
   refiner.SetReconstructionsPath(source_path);
   refiner.SetPointCloudsPath(source_path + "/SFS");
-  refiner.SetInputBlendshapesPath("/home/phg/Data/FaceWarehouse_Data_0/Tester_1/Blendshape/");
+  refiner.SetInputBlendshapesPath("/home/phg/Data/FaceWarehouse_Data_0/Tester_" + to_string(template_id) + "/Blendshape/");
   refiner.SetBlendshapesPath(source_path + "/blendshapes");
 
   refiner.LoadSelectionFile("selection_sfs.txt");
@@ -133,6 +134,7 @@ void blendShapeGeneration_pointcloud_blendshapes(
   const string& point_clouds_path,
   const string& input_blendshapes_path,
   const string& blendshapes_path,
+  int template_id,
   bool subdivision,
   bool blendshapes_subdivided,
   bool initialize_only,
@@ -148,7 +150,7 @@ void blendShapeGeneration_pointcloud_blendshapes(
     }
   );
   refiner.SetBlendshapeCount(46);
-  refiner.LoadTemplateMeshes("/home/phg/Data/FaceWarehouse_Data_0/Tester_1/Blendshape/", "shape_");
+  refiner.LoadTemplateMeshes("/home/phg/Data/FaceWarehouse_Data_0/Tester_" + to_string(template_id) + "/Blendshape/", "shape_");
 
   refiner.SetResourcesPath(source_path);
   refiner.SetReconstructionsPath(recon_path);
@@ -198,6 +200,7 @@ int main(int argc, char *argv[])
     ("pointclouds_from_meshes_with_init_shapes", "Generate blendshapes from point clouds sampled from meshes and a set of initial blendshapes")
     ("ebfr", "Generate blendshapes using example based facial rigging method")
     ("rigging", "Interactive rigging mode with specified blendshapes")
+    ("template_id", po::value<int>()->default_value(1), "Index for the template blendshapes")
     ("repo_path", po::value<string>(), "Path to images repo.")
     ("recon_path", po::value<string>(), "Path to large scale reconstruction results")
     ("pointclouds_path", po::value<string>(), "Path to input point clouds")
@@ -212,6 +215,8 @@ int main(int argc, char *argv[])
     ("ref_mesh", po::value<string>(), "Reference mesh for distance computation")
     ("mesh", po::value<string>(), "Mesh to visualize")
     ("vis", "Visualize blendshape mesh")
+    ("align", "Align mesh for error computation")
+    ("range", po::value<float>()->default_value(0.05), "Range for error visualization")
     ("rendering_settings", po::value<string>(), "Rendering settings to use")
     ("skip_faces", po::value<string>(), "Faces to skip rendering")
     ("texture", po::value<string>(), "Texture for the mesh")
@@ -245,6 +250,7 @@ int main(int argc, char *argv[])
     } else if (vm.count("pointclouds")) {
       if (vm.count("repo_path")) {
         blendShapeGeneration_pointcloud(vm["repo_path"].as<string>(),
+                                        vm["template_id"].as<int>(),
                                         vm.count("subdivision"),
                                         vm.count("no_neutral"),
                                         vm.count("mask_nose_and_fore_head"));
@@ -272,6 +278,7 @@ int main(int argc, char *argv[])
           vm["pointclouds_path"].as<string>(),
           vm["init_blendshapes_path"].as<string>(),
           vm["blendshapes_path"].as<string>(),
+          vm["template_id"].as<int>(),
           vm.count("subdivision"),
           vm.count("subdivided"),
           vm.count("initialize_only"),
@@ -323,6 +330,8 @@ int main(int argc, char *argv[])
       if(vm.count("normals")) w.SetNormals(vm["normals"].as<string>());
       if(vm.count("rendering_settings")) w.LoadRenderingSettings(vm["rendering_settings"].as<string>());
       if(vm.count("skip_faces")) w.LoadSkipFaces(vm["skip_faces"].as<string>(), vm.count("subdivided"));
+      w.SetErrorRange(vm["range"].as<float>());
+      w.SetAlignMesh(vm.count("align"));
 
       if(compare_mode) {
         string ref_mesh_file = vm["ref_mesh"].as<string>();

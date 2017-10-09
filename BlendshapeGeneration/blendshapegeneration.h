@@ -52,6 +52,14 @@ public:
     }
   }
 
+  void SetErrorRange(float v) {
+    error_range = v;
+  }
+
+  void SetAlignMesh(bool v) {
+    align_mesh = v;
+  }
+
   void loadMesh(const string& filename);
   void loadReferenceMesh(const string& filename);
 
@@ -107,6 +115,8 @@ private:
   vector<float> ao, normals;
   BasicMesh mesh;
   BasicMesh refmesh;
+  float error_range;
+  bool align_mesh;
 
   set<int> skip_faces;
 
@@ -264,6 +274,18 @@ public:
     auto indices = LoadIndices(filename);
     if(silent) {
       ocanvas->SetSkipFaces(indices, subdivided);
+    }
+  }
+
+  void SetErrorRange(float v) {
+    if(silent) {
+      ocanvas->SetErrorRange(v);
+    }
+  }
+
+  void SetAlignMesh(bool v) {
+    if(silent) {
+      ocanvas->SetAlignMesh(v);
     }
   }
 

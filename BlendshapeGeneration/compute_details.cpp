@@ -376,6 +376,59 @@ void visualize_details_normal(const string& res_filename,
   }
 }
 
+void visualize_details_normal_exp(const string& res_filename,
+                                  const string& init_bs_path,
+                                  const string& pca_comp_filename,
+                                  const string& mapping_matrix_filename,
+                                  const string& output_normals_file,
+                                  const string& output_mesh_filename) {
+  const string datapath("/home/phg/Data/FaceWarehouse_Data_0/");
+  const string mesh_filename(datapath + "Tester_1/Blendshape/shape_0.obj");
+
+  const int num_blendshapes = 46;
+  vector<BasicMesh> blendshapes(num_blendshapes+1);
+#pragma omp parallel for
+  for(int i=0;i<=num_blendshapes;++i) {
+    blendshapes[i].LoadOBJMesh( init_bs_path + "/" + "B_" + to_string(i) + ".obj" );
+    blendshapes[i].ComputeNormals();
+  }
+
+  BasicMesh m = blendshapes[0];
+
+  auto recon_results = LoadReconstructionResult(res_filename);
+  cout << "Recon results loaded." << endl;
+  {
+    MatrixX3d verts0 = blendshapes[0].vertices();
+    MatrixX3d verts = verts0;
+    for(int j=1;j<=num_blendshapes;++j) {
+      verts += (blendshapes[j].vertices() - verts0) * recon_results.params_model.Wexp_FACS(j);
+    }
+    m.vertices() = verts;
+    m.ComputeNormals();
+  }
+  m.Write(output_mesh_filename);
+
+  // Load pca components
+  Eigen::MatrixXd pca_components = load_matrix(pca_comp_filename);
+  Eigen::MatrixXd mapping_matrix = load_matrix(mapping_matrix_filename);
+
+  Eigen::VectorXd pca_coeffs = (mapping_matrix * recon_results.params_model.Wexp_FACS).eval();
+  cout << pca_coeffs << endl;
+
+  Eigen::VectorXd diff = (pca_components.transpose() * pca_coeffs).eval();
+  for(int i=0;i<m.NumVertices();++i) {
+    auto nvi = m.vertex_normal(i);
+    diff(i*3+0) += nvi[0];
+    diff(i*3+1) += nvi[1];
+    diff(i*3+2) += nvi[2];
+  }
+
+  {
+    ofstream fout(output_normals_file);
+    save_matrix(fout, diff, false);
+  }
+}
+
 void printUsage() {
   cout << "TBA" << endl;
 }
@@ -441,6 +494,19 @@ int main(int argc, char *argv[])
                              pca_comp_file,
                              mapping_matrix_file,
                              output_normals_file);
+  } else if (option == "-vne") {
+    string res_file = argv[argidx++];
+    string init_bs_path = argv[argidx++];
+    string output_mesh_file = argv[argidx++];
+    string output_normals_file = argv[argidx++];
+    string pca_comp_file = argv[argidx++];
+    string mapping_matrix_file = argv[argidx++];
+    visualize_details_normal_exp(res_file,
+                                 init_bs_path,
+                                 pca_comp_file,
+                                 mapping_matrix_file,
+                                 output_normals_file,
+                                 output_mesh_file);
   }
 
   return 0;
