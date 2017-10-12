@@ -216,6 +216,8 @@ int main(int argc, char *argv[])
     ("mesh", po::value<string>(), "Mesh to visualize")
     ("vis", "Visualize blendshape mesh")
     ("align", "Align mesh for error computation")
+    ("align_translation", "Align mesh for error computation, translation only")
+    ("face_only", "Visualize the difference in face region only")
     ("range", po::value<float>()->default_value(0.05), "Range for error visualization")
     ("rendering_settings", po::value<string>(), "Rendering settings to use")
     ("skip_faces", po::value<string>(), "Faces to skip rendering")
@@ -332,6 +334,8 @@ int main(int argc, char *argv[])
       if(vm.count("skip_faces")) w.LoadSkipFaces(vm["skip_faces"].as<string>(), vm.count("subdivided"));
       w.SetErrorRange(vm["range"].as<float>());
       w.SetAlignMesh(vm.count("align"));
+      w.SetAlignMeshTranslation(vm.count("align_translation"));
+      w.SetFaceOnlyMode(vm.count("face_only"));
 
       if(compare_mode) {
         string ref_mesh_file = vm["ref_mesh"].as<string>();

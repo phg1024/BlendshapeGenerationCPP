@@ -101,7 +101,7 @@ BasicMesh AlignMesh(const BasicMesh& source, const BasicMesh& target) {
   Tree tree(triangles.begin(), triangles.end());
   tree.accelerate_distance_queries();
 
-  const int max_iters = 5;
+  const int max_iters = 20;
   // Do a few iterations to optimize for R and t
 
   int iters = 0;
@@ -175,6 +175,119 @@ BasicMesh AlignMesh(const BasicMesh& source, const BasicMesh& target) {
 
   return aligned;
 }
+
+BasicMesh AlignMeshTranslation(const BasicMesh& source, const BasicMesh& target) {
+  BasicMesh aligned = source;
+
+  bool use_face_region = true;
+  vector<int> valid_faces;
+  if(!use_face_region) {
+    valid_faces.resize(target.NumFaces());
+    for(int i=0;i<target.NumFaces();++i) valid_faces[i] = i;
+  } else {
+    auto valid_faces_quad = LoadIndices("/home/phg/Data/Multilinear/face_region_indices.txt");
+    for(auto fidx : valid_faces_quad) {
+      valid_faces.push_back(fidx*2);
+      valid_faces.push_back(fidx*2+1);
+    }
+  }
+
+  // Do ICP
+  // Create the query tree for the valid faces
+  const int nfaces = valid_faces.size();
+  std::vector<Triangle> triangles;
+  triangles.reserve(nfaces);
+
+  {
+    boost::timer::auto_cpu_timer t("[mesh alignment] data preparation time = %w seconds.\n");
+    for(int i=0,ioffset=0;i<nfaces;++i) {
+      auto face_i = target.face(valid_faces[i]);
+      int v1 = face_i[0], v2 = face_i[1], v3 = face_i[2];
+      auto p1 = target.vertex(v1), p2 = target.vertex(v2), p3 = target.vertex(v3);
+      Point a(p1[0], p1[1], p1[2]);
+      Point b(p2[0], p2[1], p2[2]);
+      Point c(p3[0], p3[1], p3[2]);
+
+      triangles.push_back(Triangle(a, b, c));
+    }
+  }
+
+  Tree tree(triangles.begin(), triangles.end());
+  tree.accelerate_distance_queries();
+
+  const int max_iters = 20;
+  // Do a few iterations to optimize for R and t
+
+  int iters = 0;
+  while(iters < max_iters) {
+    ++iters;
+    aligned.ComputeNormals();
+
+    vector<pair<Vector3d, Vector3d>> correspondence;
+    for(int i=0;i<aligned.NumVertices();++i) {
+      auto point_i = aligned.vertex(i);
+      double px = point_i[0],
+             py = point_i[1],
+             pz = point_i[2];
+      Tree::Point_and_primitive_id bestHit = tree.closest_point_and_primitive(Point(px, py, pz));
+      double qx = bestHit.first.x(),
+             qy = bestHit.first.y(),
+             qz = bestHit.first.z();
+
+      auto ref_face = *bestHit.second;
+      auto ref_normal = CGAL::normal(ref_face[0], ref_face[1],  ref_face[2]);
+      Vector3d normal0(ref_normal.x(), ref_normal.y(), ref_normal.z());
+
+      auto normal = aligned.vertex_normal(i);
+
+      double weight_i = 1.0;
+      if(normal.dot(normal0) < 0.) {
+        continue;
+      } else {
+        double dx = px - qx, dy = py - qy, dz = pz - qz;
+        double dist_i = sqrt(dx*dx+dy*dy+dz*dz);
+        if(dist_i > 0.1) {
+          continue;
+        } else {
+          correspondence.push_back(make_pair(point_i, Vector3d(qx, qy, qz)));
+        }
+      }
+    }
+
+    // Solve for R and t using the correspondence
+    const int nconstraints = correspondence.size();
+    cout << iters << ": " << nconstraints << endl;
+    MatrixX3d P, Q;
+    P.resize(nconstraints, 3); Q.resize(nconstraints, 3);
+    for(int i=0;i<nconstraints;++i) {
+      Vector3d p_i, q_i;
+      tie(p_i, q_i) = correspondence[i];
+      P.row(i) = p_i; Q.row(i) = q_i;
+    }
+    Vector3d pbar = P.colwise().sum() / nconstraints,
+             qbar = Q.colwise().sum() / nconstraints;
+    MatrixX3d X = P - pbar.replicate(1, nconstraints).transpose(),
+             Y = Q - qbar.replicate(1, nconstraints).transpose();
+
+    MatrixXd S = X.transpose() * Y;
+    cout << S << endl;
+    JacobiSVD<MatrixXd> svd(S, ComputeThinU | ComputeThinV);
+    auto sigma = svd.singularValues();
+    MatrixXd U = svd.matrixU();
+    MatrixXd V = svd.matrixV();
+    MatrixXd VdUt = V * U.transpose();
+    double detVU = VdUt.determinant();
+    Matrix3d eye3 = Matrix3d::Identity();
+    eye3(2, 2) = detVU;
+    Matrix3d R = V * eye3 * U.transpose();
+    Vector3d t = qbar - R * pbar;
+
+    // Apply translation part to the vertices of aligned
+    aligned.vertices() = (aligned.vertices() + t.replicate(1, aligned.NumVertices()).transpose()).eval();
+  }
+
+  return aligned;
+}
 }
 
 void OffscreenBlendshapeVisualizer::computeDistance() {
@@ -203,9 +316,15 @@ void OffscreenBlendshapeVisualizer::computeDistance() {
   Tree tree(triangles.begin(), triangles.end());
   tree.accelerate_distance_queries();
 
-  if(align_mesh) mesh = AlignMesh(mesh, refmesh);
+  BasicMesh mesh_cpy;
+  if(align_mesh) mesh_cpy = AlignMesh(mesh, refmesh);
+  else if(align_mesh_translation) mesh_cpy = AlignMeshTranslation(mesh, refmesh);
+  else mesh_cpy = mesh;
+
+  mesh_cpy.ComputeNormals();
+
   // HACK if we align mesh, we are computing error for the face region only
-  bool use_face_region = align_mesh;
+  bool use_face_region = face_only_mode;
   vector<int> valid_faces;
   if(!use_face_region) {
     valid_faces.resize(refmesh.NumFaces());
@@ -216,28 +335,44 @@ void OffscreenBlendshapeVisualizer::computeDistance() {
       valid_faces.push_back(fidx*2);
       valid_faces.push_back(fidx*2+1);
     }
+
+    // HACK: each valid face i becomes [4i, 4i+1, 4i+2, 4i+3] after the each
+    // subdivision. See BasicMesh::Subdivide for details
+    const int max_subdivisions = mesh.NumVertices()>refmesh.NumVertices()?1:0;
+    for(int i=0;i<max_subdivisions;++i) {
+      vector<int> face_region_indices_new;
+      for(auto fidx : valid_faces) {
+        int fidx_base = fidx*4;
+        face_region_indices_new.push_back(fidx_base);
+        face_region_indices_new.push_back(fidx_base+1);
+        face_region_indices_new.push_back(fidx_base+2);
+        face_region_indices_new.push_back(fidx_base+3);
+      }
+      valid_faces = face_region_indices_new;
+    }
   }
   set<int> valid_vertices;
   if(use_face_region) {
     for(auto fidx : valid_faces) {
-      auto f_i = mesh.face(fidx);
+      auto f_i = mesh_cpy.face(fidx);
       valid_vertices.insert(f_i[0]);
       valid_vertices.insert(f_i[1]);
       valid_vertices.insert(f_i[2]);
     }
   } else {
-    for(int i=0;i<mesh.NumVertices();++i) valid_vertices.insert(i);
+    for(int i=0;i<mesh_cpy.NumVertices();++i) valid_vertices.insert(i);
   }
 
-  dists.resize(mesh.NumVertices(), 0);
+  dists.resize(mesh_cpy.NumVertices(), 0);
   {
     boost::timer::auto_cpu_timer t("[compute distance] closest point search time = %w seconds.\n");
     #pragma omp parallel for
     for(int i=0;i<mesh.NumVertices();++i) {
       if(!valid_vertices.count(i)) {
+        dists[i] = -0.001;
         continue;
       }
-      auto point_i = mesh.vertex(i);
+      auto point_i = mesh_cpy.vertex(i);
       double px = point_i[0],
              py = point_i[1],
              pz = point_i[2];
@@ -250,14 +385,15 @@ void OffscreenBlendshapeVisualizer::computeDistance() {
       auto ref_normal = CGAL::normal(ref_face[0], ref_face[1],  ref_face[2]);
       Vector3d normal0(ref_normal.x(), ref_normal.y(), ref_normal.z());
 
-      auto normal = mesh.vertex_normal(i);
+      auto normal = mesh_cpy.vertex_normal(i);
+
+      double dx = px - qx, dy = py - qy, dz = pz - qz;
+      dists[i] = sqrt(dx*dx+dy*dy+dz*dz);
 
       if(normal.dot(normal0) < 0) {
         dists[i] = -dists[i];
-      } else {
-        double dx = px - qx, dy = py - qy, dz = pz - qz;
-        dists[i] = sqrt(dx*dx+dy*dy+dz*dz);
-        if(dists[i] > 0.1) dists[i] = -dists[i];
+      } else if(dists[i] > 0.1) {
+        dists[i] = 0.1;
       }
     }
   }
@@ -688,10 +824,10 @@ void OffscreenBlendshapeVisualizer::drawMeshWithColor(const BasicMesh &m)
 
     auto draw_vertex = [&](double dval, decltype(p1) pj, int vj) {
       double hval0 = 1.0 - max(min((dval-minVal)/(maxVal-minVal)/0.67, 1.0), 0.0);
-      if(dval < 0) {
-        hval0 = 0.0;
-      }
       QColor c0 = QColor::fromHsvF(hval0*0.67, 1.0, 1.0);
+      if(dval < 0) {
+        c0 = QColor::fromRgbF(.75, .75, .75);
+      }
       float colors0[4] = {(float)c0.redF(), (float)c0.greenF(), (float)c0.blueF(), 1.0f};
       glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, colors0);
       auto nj = m.vertex_normal(vj);
@@ -765,10 +901,10 @@ void OffscreenBlendshapeVisualizer::drawMeshVerticesWithColor(const BasicMesh &m
 
     auto draw_vertex = [&](double dval, decltype(vert_i) pj) {
       double hval0 = 1.0 - max(min((dval-minVal)/(maxVal-minVal)/0.67, 1.0), 0.0);
-      if(dval < 0) {
-        hval0 = 0.0;
-      }
       QColor c0 = QColor::fromHsvF(hval0*0.67, 1.0, 1.0);
+      if(dval < 0) {
+        c0 = QColor::fromRgbF(.75, .75, .75);
+      }
       float colors0[4] = {(float)c0.redF(), (float)c0.greenF(), (float)c0.blueF(), 1.0f};
       glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, colors0);
       glVertex3d(pj[0], pj[1], pj[2]);

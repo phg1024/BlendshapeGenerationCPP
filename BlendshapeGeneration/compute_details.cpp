@@ -413,6 +413,12 @@ void visualize_details_normal_exp(const string& res_filename,
   Eigen::MatrixXd mapping_matrix = load_matrix(mapping_matrix_filename);
 
   Eigen::VectorXd pca_coeffs = (mapping_matrix * recon_results.params_model.Wexp_FACS).eval();
+
+  const float max_norm = 18.0;
+  float coeffs_norm = pca_coeffs.norm();
+  if(coeffs_norm > max_norm) {
+      pca_coeffs *= sqrt(max_norm / coeffs_norm);
+  }
   cout << pca_coeffs << endl;
 
   Eigen::VectorXd diff = (pca_components.transpose() * pca_coeffs).eval();

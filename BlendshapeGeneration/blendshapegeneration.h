@@ -60,6 +60,14 @@ public:
     align_mesh = v;
   }
 
+  void SetAlignMeshTranslation(bool v) {
+    align_mesh_translation = v;
+  }
+
+  void SetFaceOnlyMode(bool v) {
+    face_only_mode = v;
+  }
+
   void loadMesh(const string& filename);
   void loadReferenceMesh(const string& filename);
 
@@ -117,6 +125,8 @@ private:
   BasicMesh refmesh;
   float error_range;
   bool align_mesh;
+  bool align_mesh_translation;
+  bool face_only_mode;
 
   set<int> skip_faces;
 
@@ -286,6 +296,18 @@ public:
   void SetAlignMesh(bool v) {
     if(silent) {
       ocanvas->SetAlignMesh(v);
+    }
+  }
+
+  void SetAlignMeshTranslation(bool v) {
+    if(silent) {
+      ocanvas->SetAlignMeshTranslation(v);
+    }
+  }
+
+  void SetFaceOnlyMode(bool v) {
+    if(silent) {
+      ocanvas->SetFaceOnlyMode(v);
     }
   }
 
