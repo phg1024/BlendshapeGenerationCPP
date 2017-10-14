@@ -34,7 +34,7 @@ MeshDeformer::~MeshDeformer() {}
 
 BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const MatrixX3d &lm_points, int itmax)
 {
-  MatrixX3d P = T.samplePoints(8, -0.1);
+  MatrixX3d P = T.samplePoints(32, -0.1);
   return deformWithPoints(P, lm_points, itmax);
 }
 
