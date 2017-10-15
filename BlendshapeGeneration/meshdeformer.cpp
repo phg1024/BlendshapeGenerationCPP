@@ -924,9 +924,9 @@ struct DistortionCostFunction {
       ++jidx;
     }
 
-    residual[0] = ivec[0] + jsum[0];
-    residual[1] = ivec[1] + jsum[1];
-    residual[2] = ivec[2] + jsum[2];
+    residual[0] = (ivec[0] + jsum[0]) * weight;
+    residual[1] = (ivec[1] + jsum[1]) * weight;
+    residual[2] = (ivec[2] + jsum[2]) * weight;
 
     return true;
   }
