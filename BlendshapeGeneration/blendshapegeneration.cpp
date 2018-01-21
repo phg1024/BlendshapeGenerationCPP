@@ -727,9 +727,9 @@ void OffscreenBlendshapeVisualizer::drawMesh(const BasicMesh &m)
   auto set_material_with_ao = [&](float ao_value) {
     auto& mat_diffuse_json = rendering_settings["material"]["diffuse"];
     GLfloat mat_diffuse[] = {
-      float(mat_diffuse_json[0]) * ao_value,
-      float(mat_diffuse_json[1]) * ao_value,
-      float(mat_diffuse_json[2]) * ao_value,
+      float(mat_diffuse_json[0]) * pow(ao_value, static_cast<double>(rendering_settings["ao_power"])),
+      float(mat_diffuse_json[1]) * pow(ao_value, static_cast<double>(rendering_settings["ao_power"])),
+      float(mat_diffuse_json[2]) * pow(ao_value, static_cast<double>(rendering_settings["ao_power"])),
       float(mat_diffuse_json[3])
     };
     glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, mat_diffuse);

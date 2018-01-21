@@ -269,7 +269,7 @@ void BlendshapeRefiner::LoadInputExampleMeshes() {
       }
     }
 
-    point_clouds[i] = example_i.samplePoints(8, pointcloud_faces);
+    point_clouds[i] = example_i.samplePoints(32, pointcloud_faces);
 
     // Write this out so we can measure the reconstruction error later
     {
