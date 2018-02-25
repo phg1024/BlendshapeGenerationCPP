@@ -84,6 +84,9 @@ find_package(Ceres REQUIRED)
 include_directories(${CERES_INCLUDE_DIRS})
 link_libraries(${CERES_LIBRARIES})
 
+include_directories("${CMAKE_CURRENT_LIST_DIR}/MultilinearReconstruction/third_party/json/include")
+
+
 add_library(meshdeformer meshdeformer.cpp)
 target_link_libraries(meshdeformer
   Qt5::Core

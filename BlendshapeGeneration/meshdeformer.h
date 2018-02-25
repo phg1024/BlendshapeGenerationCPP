@@ -141,7 +141,7 @@ public:
     #endif
   }
 
-  BasicMesh deformWithMesh(const BasicMesh &T, const MatrixX3d &lm_points, int itmax = 10);
+  BasicMesh deformWithMesh(const BasicMesh &T, const MatrixX3d &lm_points, int itmax = 10, int points_per_face = 32);
   BasicMesh deformWithPoints(const MatrixX3d &P, const MatrixX3d &lm_points, int itmax = 10);
   BasicMesh deformWithNormals(const vector<NormalConstraint> &normals, const MatrixX3d &lm_points, int itmax = 10);
 

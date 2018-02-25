@@ -32,9 +32,9 @@ MeshDeformer::MeshDeformer() {}
 
 MeshDeformer::~MeshDeformer() {}
 
-BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const MatrixX3d &lm_points, int itmax)
+BasicMesh MeshDeformer::deformWithMesh(const BasicMesh &T, const MatrixX3d &lm_points, int itmax, int points_per_face)
 {
-  MatrixX3d P = T.samplePoints(32, -0.1);
+  MatrixX3d P = T.samplePoints(points_per_face, -0.1);
   return deformWithPoints(P, lm_points, itmax);
 }
 
@@ -328,7 +328,7 @@ BasicMesh MeshDeformer::deformWithPoints(const MatrixX3d &P, const MatrixX3d &lm
 
   double ratio_data2icp = max(0.1, 10.0*lm_points.rows() / (double) S.NumVertices());
   //cout << ratio_data2icp << endl;
-  double w_icp = 0, w_icp_step = ratio_data2icp;
+  double w_icp = 1e-3, w_icp_step = ratio_data2icp;
   double w_data = 10.0*74.0/lm_points.rows(), w_data_step = w_data/itmax;
   double w_dist = 10000.0 * ratio_data2icp, w_dist_step = w_dist/itmax;
   double w_prior = 10.0, w_prior_step = w_prior*0.95/itmax;

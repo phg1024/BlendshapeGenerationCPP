@@ -44,15 +44,15 @@ struct CombinedIdentityExpressionCostFunction {
 
     // Compute the residues
     #pragma omp parallel for
-    for(int i=0,offset=0;i<num_residues;++i) {
+    for(int i=0;i<num_residues;++i) {
       auto vi = target.vertex(i);
 
       //cout << vi << endl;
       //cout << tm(offset) << ", " << tm(++offset) << ", " << tm(++offset)
 
-      double dx = vi[0] - tm(offset++);
-      double dy = vi[1] - tm(offset++);
-      double dz = vi[2] - tm(offset++);
+      double dx = vi[0] - tm(i*3);
+      double dy = vi[1] - tm(i*3+1);
+      double dz = vi[2] - tm(i*3+2);
 
       residual[i] = sqrt(dx*dx + dy*dy + dz*dz);
     }

@@ -42,7 +42,8 @@ void OffscreenBlendshapeVisualizer::SetBasicRenderingParams() {
     rendering_settings["campos"][1],
     rendering_settings["campos"][2]);
 
-  if(string(rendering_settings["mode"]) == "perspective") {
+  string render_mode = rendering_settings["mode"];
+  if(render_mode == "perspective") {
     projectionMode = PERSPECTIVE;
   } else {
     projectionMode = ORTHONGONAL;

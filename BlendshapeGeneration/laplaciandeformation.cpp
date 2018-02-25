@@ -28,12 +28,12 @@ void laplacianDeformation() {
 
   BasicMesh m;
   m.LoadOBJMesh(datapath + "Tester_1/Blendshape/shape_0.obj");
-  m.BuildHalfEdgeMesh();
-  cout << "subdivide..." << endl;
-  m.Subdivide();
-  m.BuildHalfEdgeMesh();
-  cout << "subdivide..." << endl;
-  m.Subdivide();
+  // m.BuildHalfEdgeMesh();
+  // cout << "subdivide..." << endl;
+  // m.Subdivide();
+  // m.BuildHalfEdgeMesh();
+  // cout << "subdivide..." << endl;
+  // m.Subdivide();
 
   MeshDeformer deformer;
   deformer.setSource(m);
@@ -50,10 +50,10 @@ void laplacianDeformation() {
   int objidx = 1;
   BasicMesh T;
   T.LoadOBJMesh(datapath + "Tester_1/TrainingPose/pose_" + to_string(objidx) + ".obj");
-  T.BuildHalfEdgeMesh();
-  T.Subdivide();
-  T.BuildHalfEdgeMesh();
-  T.Subdivide();
+  // T.BuildHalfEdgeMesh();
+  // T.Subdivide();
+  // T.BuildHalfEdgeMesh();
+  // T.Subdivide();
 
   MatrixX3d lm_points(landmarks.size(), 3);
   for(int i=0;i<landmarks.size();++i) {
@@ -63,6 +63,37 @@ void laplacianDeformation() {
     lm_points(i, 2) = vi[2];
   }
   BasicMesh D = deformer.deformWithMesh(T, lm_points, 20);
+
+  D.Write("deformed" + to_string(objidx) + ".obj");
+}
+
+void laplacianDeformation_meshes(
+  const string& source_mesh_file,
+  const string& target_mesh_file,
+  const string& output_mesh_file,
+  int itmax
+) {
+  const string datapath("/home/phg/Data/FaceWarehouse_Data_0/");
+  BasicMesh m;
+  m.LoadOBJMesh(source_mesh_file);
+
+  MeshDeformer deformer;
+  deformer.setSource(m);
+
+  vector<int> landmarks = LoadIndices(datapath+"landmarks_74_new.txt");
+  deformer.setLandmarks(landmarks);
+
+  vector<int> valid_faces = m.filterFaces([&m](Vector3i fi) {
+    Vector3d c = (m.vertex(fi[0]) + m.vertex(fi[1]) + m.vertex(fi[2]))/ 3.0;
+    return c[2] > -0.75;
+  });
+  deformer.setValidFaces(valid_faces);
+
+  int objidx = 1;
+  BasicMesh T;
+  T.LoadOBJMesh(target_mesh_file);
+
+  BasicMesh D = deformer.deformWithMesh(T, MatrixX3d(), itmax, 3);
 
   D.Write("deformed" + to_string(objidx) + ".obj");
 }
@@ -458,6 +489,12 @@ int main(int argc, char *argv[])
     string init_bs_path = argc>6?argv[6]:"";
     bool subdivided = argc>7?string(argv[7])=="1":false;
     laplacianDeformation_mesh_exp(res_file, init_bs_path, target_mesh_file, output_mesh_file, itmax, subdivided);
+  } else if( option == "-lms" ) {
+    string source_mesh_file = argc>2?argv[2]:"/home/phg/Data/SFS_test/Andy_Lau_400x400/outputs/deformed.obj";
+    string target_mesh_file = argc>3?argv[3]:"/home/phg/Data/SFS_test/Andy_Lau_400x400/outputs/deformed.obj";
+    string output_mesh_file = argc>4?argv[4]:"deformed.obj";
+    int itmax = argc>5?stoi(argv[5]):20;
+    laplacianDeformation_meshes(source_mesh_file, target_mesh_file, output_mesh_file, itmax);
   }
 
   return 0;
