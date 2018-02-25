@@ -2,6 +2,7 @@
 
 #include "blendshapegeneration.h"
 #include <QtWidgets/QApplication>
+#include <QDir>
 
 #include "testcases.h"
 
@@ -154,7 +155,9 @@ void compute_details_exp(
   const string& output_fitted_mesh_filename,
   const string& output_diff_filename
 ) {
-  const string hair_mask_path("/home/phg/Data/Multilinear/hair_region_indices.txt");
+  const string home_directory = QDir::homePath().toStdString();
+  cout << "Home dir: " << home_directory << endl;
+  const string hair_mask_path(home_directory + "/Data/Multilinear/hair_region_indices.txt");
   auto hair_region_indices_quad = LoadIndices(hair_mask_path);
   vector<int> hair_region_indices;
   // @HACK each quad face is triangulated, so the indices change from i to [2*i, 2*i+1]
@@ -178,7 +181,7 @@ void compute_details_exp(
   }
   unordered_set<int> hair_region_indices_set(hair_region_indices.begin(), hair_region_indices.end());
 
-  const string datapath("/home/phg/Data/FaceWarehouse_Data_0/");
+  const string datapath(home_directory + "/Data/FaceWarehouse_Data_0/");
   const string mesh_filename(datapath + "Tester_1/Blendshape/shape_0.obj");
 
   const int num_blendshapes = 46;
@@ -244,7 +247,9 @@ void compute_details_exp(
   const string& coarse_mesh_file,
   const string& output_diff_filename
 ) {
-  const string hair_mask_path("/home/phg/Data/Multilinear/hair_region_indices.txt");
+  const string home_directory = QDir::homePath().toStdString();
+  cout << "Home dir: " << home_directory << endl;
+  const string hair_mask_path(home_directory + "/Data/Multilinear/hair_region_indices.txt");
   auto hair_region_indices_quad = LoadIndices(hair_mask_path);
   vector<int> hair_region_indices;
   // @HACK each quad face is triangulated, so the indices change from i to [2*i, 2*i+1]
@@ -268,7 +273,7 @@ void compute_details_exp(
   }
   unordered_set<int> hair_region_indices_set(hair_region_indices.begin(), hair_region_indices.end());
 
-  const string datapath("/home/phg/Data/FaceWarehouse_Data_0/");
+  const string datapath(home_directory + "/Data/FaceWarehouse_Data_0/");
   const string mesh_filename(datapath + "Tester_1/Blendshape/shape_0.obj");
 
   BasicMesh m;
@@ -319,7 +324,9 @@ void visualize_details(
   const string& mapping_matrix_filename,
   const string& output_detailed_mesh_file
 ) {
-  const string datapath("/home/phg/Data/FaceWarehouse_Data_0/");
+  const string home_directory = QDir::homePath().toStdString();
+  cout << "Home dir: " << home_directory << endl;
+  const string datapath(home_directory + "/Data/FaceWarehouse_Data_0/");
   const string mesh_filename(datapath + "Tester_1/Blendshape/shape_0.obj");
 
   BasicMesh m;
@@ -345,7 +352,9 @@ void visualize_details_normal(const string& res_filename,
                               const string& pca_comp_filename,
                               const string& mapping_matrix_filename,
                               const string& output_normals_file) {
-  const string datapath("/home/phg/Data/FaceWarehouse_Data_0/");
+                                const string home_directory = QDir::homePath().toStdString();
+                                cout << "Home dir: " << home_directory << endl;
+  const string datapath(home_directory + "/Data/FaceWarehouse_Data_0/");
   const string mesh_filename(datapath + "Tester_1/Blendshape/shape_0.obj");
 
   auto recon_results = LoadReconstructionResult(res_filename);
@@ -382,7 +391,9 @@ void visualize_details_normal_exp(const string& res_filename,
                                   const string& mapping_matrix_filename,
                                   const string& output_normals_file,
                                   const string& output_mesh_filename) {
-  const string datapath("/home/phg/Data/FaceWarehouse_Data_0/");
+                                    const string home_directory = QDir::homePath().toStdString();
+                                    cout << "Home dir: " << home_directory << endl;
+  const string datapath(home_directory + "/Data/FaceWarehouse_Data_0/");
   const string mesh_filename(datapath + "Tester_1/Blendshape/shape_0.obj");
 
   const int num_blendshapes = 46;

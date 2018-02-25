@@ -10,7 +10,7 @@
 
 #include <boost/timer/timer.hpp>
 
-#include "json/src/json.hpp"
+#include "nlohmann/json.hpp"
 using json = nlohmann::json;
 
 class OffscreenBlendshapeVisualizer {

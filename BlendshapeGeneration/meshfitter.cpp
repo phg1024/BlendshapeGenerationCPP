@@ -67,12 +67,14 @@ struct CombinedIdentityExpressionCostFunction {
 void FitMesh(const string& meshfile, const string& output_mesh_filename) {
   // Load the target mesh
   BasicMesh mesh(meshfile);
+  const string home_directory = QDir::homePath().toStdString();
+  cout << "Home dir: " << home_directory << endl;
 
   // Load multilinear model
-  MultilinearModel model("/home/phg/Data/Multilinear/blendshape_core.tensor");
+  MultilinearModel model(home_directory + "/Data/Multilinear/blendshape_core.tensor");
   MultilinearModelPrior model_prior;
-  model_prior.load("/home/phg/Data/Multilinear/blendshape_u_0_aug.tensor",
-                   "/home/phg/Data/Multilinear/blendshape_u_1_aug.tensor");
+  model_prior.load(home_directory + "/Data/Multilinear/blendshape_u_0_aug.tensor",
+                   home_directory + "/Data/Multilinear/blendshape_u_1_aug.tensor");
 
   // Optimize for both identity and expression weights
   ceres::Problem problem;

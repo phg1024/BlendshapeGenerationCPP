@@ -25,7 +25,9 @@ OffscreenBlendshapeVisualizer::OffscreenBlendshapeVisualizer(int w, int h)
   : use_side_view(false), canvasW(w), canvasH(h), has_texture(false) {
   // Load and Parse rendering settings
   {
-    std::ifstream fin("/home/phg/Data/Settings/blendshape_vis.json");
+    const string home_directory = QDir::homePath().toStdString();
+    cout << "Home dir: " << home_directory << endl;
+    std::ifstream fin(home_directory + "/Data/Settings/blendshape_vis.json");
     fin >> rendering_settings;
     //cout << rendering_settings << endl;
   }
@@ -72,7 +74,9 @@ BasicMesh AlignMesh(const BasicMesh& source, const BasicMesh& target) {
     valid_faces.resize(target.NumFaces());
     for(int i=0;i<target.NumFaces();++i) valid_faces[i] = i;
   } else {
-    auto valid_faces_quad = LoadIndices("/home/phg/Data/Multilinear/face_region_indices.txt");
+    const string home_directory = QDir::homePath().toStdString();
+    cout << "Home dir: " << home_directory << endl;
+    auto valid_faces_quad = LoadIndices(home_directory + "/Data/Multilinear/face_region_indices.txt");
     for(auto fidx : valid_faces_quad) {
       valid_faces.push_back(fidx*2);
       valid_faces.push_back(fidx*2+1);
@@ -186,7 +190,9 @@ BasicMesh AlignMeshTranslation(const BasicMesh& source, const BasicMesh& target)
     valid_faces.resize(target.NumFaces());
     for(int i=0;i<target.NumFaces();++i) valid_faces[i] = i;
   } else {
-    auto valid_faces_quad = LoadIndices("/home/phg/Data/Multilinear/face_region_indices.txt");
+    const string home_directory = QDir::homePath().toStdString();
+    cout << "Home dir: " << home_directory << endl;
+    auto valid_faces_quad = LoadIndices(home_directory + "/Data/Multilinear/face_region_indices.txt");
     for(auto fidx : valid_faces_quad) {
       valid_faces.push_back(fidx*2);
       valid_faces.push_back(fidx*2+1);
@@ -331,7 +337,9 @@ void OffscreenBlendshapeVisualizer::computeDistance() {
     valid_faces.resize(refmesh.NumFaces());
     for(int i=0;i<refmesh.NumFaces();++i) valid_faces[i] = i;
   } else {
-    auto valid_faces_quad = LoadIndices("/home/phg/Data/Multilinear/face_region_indices.txt");
+    const string home_directory = QDir::homePath().toStdString();
+    cout << "Home dir: " << home_directory << endl;
+    auto valid_faces_quad = LoadIndices(home_directory + "/Data/Multilinear/face_region_indices.txt");
     for(auto fidx : valid_faces_quad) {
       valid_faces.push_back(fidx*2);
       valid_faces.push_back(fidx*2+1);

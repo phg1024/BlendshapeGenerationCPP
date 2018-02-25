@@ -5,6 +5,8 @@
 
 #include "MultilinearReconstruction/costfunctions.h"
 
+#include <QDir>
+
 namespace utils {
   void pause() {
     std::cout << "Press enter to continue...";
@@ -25,17 +27,20 @@ BlendshapeRefiner::BlendshapeRefiner(json settings) {
     mask_nose_and_fore_head = false;
   }
 
+  const string home_directory = QDir::homePath().toStdString();
+  cout << "Home dir: " << home_directory << endl;
+
   reporter = Reporter("Blendshape Refiner");
 
   {
     reporter.Tic("Initialization");
 
-    model = MultilinearModel("/home/phg/Data/Multilinear/blendshape_core.tensor");
+    model = MultilinearModel(home_directory + "/Data/Multilinear/blendshape_core.tensor");
 
-    model_prior.load("/home/phg/Data/Multilinear/blendshape_u_0_aug.tensor",
-                     "/home/phg/Data/Multilinear/blendshape_u_1_aug.tensor");
+    model_prior.load(home_directory + "/Data/Multilinear/blendshape_u_0_aug.tensor",
+                     home_directory + "/Data/Multilinear/blendshape_u_1_aug.tensor");
 
-    template_mesh = BasicMesh("/home/phg/Data/Multilinear/template.obj");
+    template_mesh = BasicMesh(home_directory + "/Data/Multilinear/template.obj");
 
     {
       // Load indices
@@ -51,9 +56,9 @@ BlendshapeRefiner::BlendshapeRefiner(json settings) {
         return indices;
       };
 
-      hair_region_indices = load_indices("/home/phg/Data/Multilinear/hair_region_indices.txt");
-      nose_forehead_indices = load_indices("/home/phg/Data/Multilinear/nose_and_forehead_indices.txt");
-      extended_hair_region_indices = load_indices("/home/phg/Data/Multilinear/extended_hair_region_indices.txt");
+      hair_region_indices = load_indices(home_directory + "/Data/Multilinear/hair_region_indices.txt");
+      nose_forehead_indices = load_indices(home_directory + "/Data/Multilinear/nose_and_forehead_indices.txt");
+      extended_hair_region_indices = load_indices(home_directory + "/Data/Multilinear/extended_hair_region_indices.txt");
     }
 
     reporter.Toc();

@@ -3,6 +3,7 @@
 #include "blendshapegeneration.h"
 #include "interactiverigging.h"
 #include <QtWidgets/QApplication>
+#include <QDir>
 
 #include "testcases.h"
 
@@ -30,7 +31,7 @@
 
 namespace fs = boost::filesystem;
 
-#include "json/src/json.hpp"
+#include "nlohmann/json.hpp"
 using json = nlohmann::json;
 
 void blendShapeGeneration_mesh(
@@ -47,13 +48,16 @@ void blendShapeGeneration_mesh(
     {"mask_nose_and_fore_head", mask_nose_and_fore_head}
   });
 
+  const string home_directory = QDir::homePath().toStdString();
+  cout << "Home dir: " << home_directory << endl;
+
   refiner.SetBlendshapeCount(46);
-  refiner.LoadTemplateMeshes("/home/phg/Data/FaceWarehouse_Data_0/Tester_1/Blendshape/", "shape_");
+  refiner.LoadTemplateMeshes(home_directory + "/Data/FaceWarehouse_Data_0/Tester_1/Blendshape/", "shape_");
 
   refiner.SetResourcesPath(source_path);
   refiner.SetReconstructionsPath(source_path);
   refiner.SetExampleMeshesPath(source_path + "/normal_constraints");
-  refiner.SetInputBlendshapesPath("/home/phg/Data/FaceWarehouse_Data_0/Tester_1/Blendshape/");
+  refiner.SetInputBlendshapesPath(home_directory + "/Data/FaceWarehouse_Data_0/Tester_1/Blendshape/");
   refiner.SetBlendshapesPath(source_path + "/blendshapes");
 
   refiner.LoadSelectionFile("selection_sfs.txt");
@@ -83,8 +87,12 @@ void blendShapeGeneration_mesh_blendshapes(
     {"mask_nose_and_fore_head", mask_nose_and_fore_head}
   }
   );
+
+  const string home_directory = QDir::homePath().toStdString();
+  cout << "Home dir: " << home_directory << endl;
+
   refiner.SetBlendshapeCount(46);
-  refiner.LoadTemplateMeshes("/home/phg/Data/FaceWarehouse_Data_0/Tester_1/Blendshape/", "shape_");
+  refiner.LoadTemplateMeshes(home_directory + "/Data/FaceWarehouse_Data_0/Tester_1/Blendshape/", "shape_");
 
   refiner.SetResourcesPath(source_path);
   refiner.SetReconstructionsPath(recon_path);
@@ -112,13 +120,16 @@ void blendShapeGeneration_pointcloud(
         {"blendshapes_subdivided", false},
         {"mask_nose_and_fore_head", mask_nose_and_fore_head}
       });
+
+  const string home_directory = QDir::homePath().toStdString();
+  cout << "Home dir: " << home_directory << endl;
   refiner.SetBlendshapeCount(46);
-  refiner.LoadTemplateMeshes("/home/phg/Data/FaceWarehouse_Data_0/Tester_" + to_string(template_id) + "/Blendshape/", "shape_");
+  refiner.LoadTemplateMeshes(home_directory + "/Data/FaceWarehouse_Data_0/Tester_" + to_string(template_id) + "/Blendshape/", "shape_");
 
   refiner.SetResourcesPath(source_path);
   refiner.SetReconstructionsPath(source_path);
   refiner.SetPointCloudsPath(source_path + "/SFS");
-  refiner.SetInputBlendshapesPath("/home/phg/Data/FaceWarehouse_Data_0/Tester_" + to_string(template_id) + "/Blendshape/");
+  refiner.SetInputBlendshapesPath(home_directory + "/Data/FaceWarehouse_Data_0/Tester_" + to_string(template_id) + "/Blendshape/");
   refiner.SetBlendshapesPath(source_path + "/blendshapes");
 
   refiner.LoadSelectionFile("selection_sfs.txt");
@@ -149,8 +160,10 @@ void blendShapeGeneration_pointcloud_blendshapes(
       {"mask_nose_and_fore_head", mask_nose_and_fore_head}
     }
   );
+  const string home_directory = QDir::homePath().toStdString();
+  cout << "Home dir: " << home_directory << endl;
   refiner.SetBlendshapeCount(46);
-  refiner.LoadTemplateMeshes("/home/phg/Data/FaceWarehouse_Data_0/Tester_" + to_string(template_id) + "/Blendshape/", "shape_");
+  refiner.LoadTemplateMeshes(home_directory + "/Data/FaceWarehouse_Data_0/Tester_" + to_string(template_id) + "/Blendshape/", "shape_");
 
   refiner.SetResourcesPath(source_path);
   refiner.SetReconstructionsPath(recon_path);
@@ -167,16 +180,18 @@ void blendShapeGeneration_pointcloud_blendshapes(
 
 void blendShapeGeneration_pointcloud_EBFR() {
   BlendshapeRefiner refiner;
+  const string home_directory = QDir::homePath().toStdString();
+  cout << "Home dir: " << home_directory << endl;
   refiner.SetBlendshapeCount(46);
-  refiner.LoadTemplateMeshes("/home/phg/Storage/Data/FaceWarehouse_Data_0/Tester_1/Blendshape/", "shape_");
+  refiner.LoadTemplateMeshes(home_directory + "/Storage/Data/FaceWarehouse_Data_0/Tester_1/Blendshape/", "shape_");
 
   // yaoming
-  refiner.SetResourcesPath("/home/phg/Storage/Data/InternetRecon0/yaoming/crop/");
+  refiner.SetResourcesPath(home_directory + "/Storage/Data/InternetRecon0/yaoming/crop/");
   refiner.LoadInputReconstructionResults("settings.txt");
   refiner.LoadInputPointClouds();
 
   // // Turing
-  // refiner.SetResourcesPath("/home/phg/Storage/Data/InternetRecon2/Allen_Turing/");
+  // refiner.SetResourcesPath(home_directory + "/Storage/Data/InternetRecon2/Allen_Turing/");
   // refiner.LoadInputReconstructionResults("setting.txt");
   // refiner.LoadInputPointClouds();
 
